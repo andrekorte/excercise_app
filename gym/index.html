@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Gym Trainer</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gym">
+<meta name="theme-color" content="#f5f5f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0e0d" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+:root{
+  color-scheme: light dark;
+  --page:#f5f5f3; --surface:#ffffff; --ink:#1c1c1a; --ink-2:#52514e; --muted:#8a887f;
+  --grid:#e7e6e0; --baseline:#c3c2b7; --ring:rgba(28,28,26,.09);
+  --accent:#0d7a52; --chart:#0d7a52; --danger:#b3372f; --warn:#b98200;
+  --tint-a-bg:#e8f0fb; --tint-a-ink:#1c5cab;
+  --tint-b-bg:#fcebe2; --tint-b-ink:#b4441c;
+  --tint-c-bg:#e2f4ec; --tint-c-ink:#0d7a52;
+  --tint-i-bg:#fbe7e6; --tint-i-ink:#a53730;
+  --warn-bg:#fdf3da;
+  --shadow:0 1px 2px rgba(20,20,18,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --page:#0e0e0d; --surface:#1a1a19; --ink:#f3f2ed; --ink-2:#c3c2b7; --muted:#8a887f;
+    --grid:#2c2c2a; --baseline:#383835; --ring:rgba(255,255,255,.10);
+    --accent:#34c08e; --chart:#2ab381; --danger:#e5837c; --warn:#e0b34c;
+    --tint-a-bg:#1c2a3d; --tint-a-ink:#86b6ef;
+    --tint-b-bg:#392015; --tint-b-ink:#eb9a72;
+    --tint-c-bg:#132f26; --tint-c-ink:#57c9a0;
+    --tint-i-bg:#3a1c1b; --tint-i-ink:#e5837c;
+    --warn-bg:#33290f;
+    --shadow:none;
+  }
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--page); color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:16px; line-height:1.45;
+  padding-bottom:calc(64px + env(safe-area-inset-bottom));
+  overscroll-behavior-y:none;
+}
+header.appbar{
+  position:sticky; top:0; z-index:20; background:var(--page);
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+  display:flex; align-items:center; gap:10px; min-height:44px;
+  border-bottom:1px solid var(--ring);
+}
+header.appbar h1{font-size:19px; margin:0; font-weight:700; flex:1;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.backbtn{border:0;background:none;color:var(--accent);font-size:16px;padding:6px 4px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:2px}
+.backbtn svg{margin-left:-6px}
+main{padding:16px; max-width:560px; margin:0 auto}
+.hidden{display:none!important}
+
+/* buttons */
+.btn{
+  display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+  border:0; border-radius:12px; padding:14px 16px; font-size:16px; font-weight:600;
+  cursor:pointer; color:#fff; background:#0e7a52; font-family:inherit;
+  letter-spacing:.01em;
+}
+.btn:active{filter:brightness(.92)}
+.btn.secondary{background:var(--surface); color:var(--ink); box-shadow:inset 0 0 0 1px var(--ring), var(--shadow)}
+.btn.danger{background:var(--tint-i-bg); color:var(--tint-i-ink)}
+.btn.small{width:auto; padding:8px 14px; font-size:14px; border-radius:10px; font-weight:600}
+.btnrow{display:flex; gap:10px; margin:12px 0}
+.btnrow .btn{flex:1}
+
+/* cards */
+.card{
+  background:var(--surface); border-radius:12px; padding:14px;
+  box-shadow:inset 0 0 0 1px var(--ring), var(--shadow); margin-bottom:10px;
+}
+.card.tappable{cursor:pointer}
+.card.tappable:active{filter:brightness(.96)}
+.cardhead{display:flex; align-items:center; gap:10px}
+.cardhead .date{font-weight:650}
+.cardhead .spacer{flex:1}
+.cardsub{color:var(--ink-2); font-size:14px; margin-top:4px; display:flex; align-items:center; gap:5px}
+.chev{color:var(--muted); display:inline-flex; align-items:center}
+.pr-ink{color:var(--warn); display:inline-flex; align-items:center}
+
+/* badges */
+.badge{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:34px; height:30px; border-radius:9px; font-weight:700; font-size:13px;
+  padding:0 7px; flex:none; letter-spacing:.02em;
+}
+.badge.D1{background:var(--tint-a-bg); color:var(--tint-a-ink)}
+.badge.D2{background:var(--tint-b-bg); color:var(--tint-b-ink)}
+.badge.MIX{background:var(--tint-c-bg); color:var(--tint-c-ink)}
+
+.weekline{color:var(--muted); font-size:13px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; margin:16px 2px 10px}
+.sectionlabel{font-size:12px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin:20px 2px 8px; display:flex; align-items:center; gap:7px}
+.empty{color:var(--muted); text-align:center; padding:28px 10px; font-size:15px}
+
+/* exercise rows in capture/edit */
+.exrow{background:var(--surface); border-radius:12px; box-shadow:inset 0 0 0 1px var(--ring), var(--shadow); padding:12px 14px; margin-bottom:10px}
+.exrow.skipped .exbody{opacity:.35}
+.exrow .extitle{display:flex; align-items:center; gap:8px}
+.exrow .exname{font-weight:650; flex:1; min-width:0}
+.cue{color:var(--muted); font-size:13px; margin-top:2px}
+.controls{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+.ctl{flex:1; min-width:104px}
+.ctl label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600}
+.stepper{display:flex; align-items:stretch; border-radius:10px; box-shadow:inset 0 0 0 1px var(--ring); overflow:hidden; background:var(--page)}
+.stepper.blankhl{box-shadow:inset 0 0 0 1.5px var(--warn); background:var(--warn-bg)}
+.stepper button{border:0; background:none; color:var(--accent); font-size:18px; width:27px; cursor:pointer; font-weight:700; flex:none; padding:0}
+.stepper input{border:0; background:none; color:var(--ink); flex:1; width:100%; min-width:44px; text-align:center; font-size:16px; font-weight:650; padding:9px 0; font-variant-numeric:tabular-nums; font-family:inherit}
+.stepper input:focus{outline:none}
+.stepper input::placeholder{color:var(--warn); font-weight:600; font-size:13px}
+input[type=text],input[type=date],input[type=url],input[type=search],textarea,select{
+  width:100%; border:0; border-radius:10px; box-shadow:inset 0 0 0 1px var(--ring);
+  background:var(--surface); color:var(--ink); padding:12px; font-size:16px; font-family:inherit;
+}
+textarea{min-height:96px; resize:vertical}
+.field{margin-bottom:14px}
+.field>label{display:block; font-size:13px; color:var(--muted); font-weight:650; margin:0 2px 6px}
+
+.skipbtn{border:0; border-radius:999px; padding:6px 13px; font-size:13px; font-weight:600;
+  background:var(--page); color:var(--ink-2); box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer; font-family:inherit}
+.skipbtn.on{background:var(--tint-i-bg); color:var(--tint-i-ink); box-shadow:none}
+.videobtn{border:0; border-radius:999px; width:32px; height:32px;
+  display:inline-flex; align-items:center; justify-content:center; flex:none;
+  background:var(--page); color:var(--accent); box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer}
+.rmbtn{border:0; border-radius:999px; width:28px; height:28px; flex:none;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:var(--page); color:var(--danger); box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer}
+
+/* single exercise picker */
+.pickrow{display:flex; align-items:center; gap:10px; width:100%; border:0; border-radius:12px;
+  background:var(--surface); box-shadow:inset 0 0 0 1px var(--ring), var(--shadow); padding:13px 14px; margin-bottom:8px;
+  cursor:pointer; text-align:left; font-family:inherit; color:var(--ink)}
+.pickrow .pname{font-weight:650; font-size:15px; flex:1; min-width:0}
+.daychip{display:inline-flex; align-items:center; justify-content:center; border-radius:6px;
+  font-size:11px; font-weight:700; padding:2px 6px; letter-spacing:.02em}
+.daychip.D1{background:var(--tint-a-bg); color:var(--tint-a-ink)}
+.daychip.D2{background:var(--tint-b-bg); color:var(--tint-b-ink)}
+
+/* detail table */
+table.dtl{width:100%; border-collapse:collapse; font-size:15px}
+table.dtl td{padding:8px 6px; border-top:1px solid var(--grid); vertical-align:top}
+table.dtl tr:first-child td{border-top:0}
+table.dtl td.num{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; color:var(--ink-2)}
+.skiptag{color:var(--danger); font-weight:700; font-size:12px; letter-spacing:.04em}
+.prline{display:flex; align-items:center; gap:8px; color:var(--warn); font-weight:650; font-size:14px; padding:4px 0}
+
+/* weeks view */
+.weekrow{background:var(--surface); border-radius:12px; box-shadow:inset 0 0 0 1px var(--ring), var(--shadow);
+  padding:13px 14px; margin-bottom:10px}
+.weekrow.zero{opacity:.55; box-shadow:inset 0 0 0 1px var(--ring)}
+.weekrow .wtop{display:flex; align-items:baseline; gap:8px}
+.weekrow .wlabel{font-weight:700; font-size:15px; flex:1}
+.weekrow .wcount{color:var(--ink-2); font-size:13.5px; font-variant-numeric:tabular-nums}
+.weekrow .wchips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center}
+.wchip{border:0; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center;
+  border-radius:8px; font-size:12.5px; font-weight:700; padding:5px 9px; letter-spacing:.02em}
+.wchip.D1{background:var(--tint-a-bg); color:var(--tint-a-ink)}
+.wchip.D2{background:var(--tint-b-bg); color:var(--tint-b-ink)}
+.wchip.MIX{background:var(--tint-c-bg); color:var(--tint-c-ink)}
+.wpr{display:inline-flex; align-items:center; gap:4px; color:var(--warn); font-size:12.5px; font-weight:700; margin-left:2px}
+
+/* tab bar */
+nav.tabs{
+  position:fixed; bottom:0; left:0; right:0; z-index:20;
+  display:flex; background:var(--page); border-top:1px solid var(--ring);
+  padding:6px 0 calc(6px + env(safe-area-inset-bottom));
+}
+nav.tabs a{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+  text-decoration:none; color:var(--muted); font-size:10.5px; font-weight:600; padding:5px 0 3px; letter-spacing:.02em}
+nav.tabs a svg{display:block}
+nav.tabs a.active{color:var(--accent)}
+
+/* settings list */
+.setrow{display:flex; align-items:center; gap:10px; padding:12px 2px; border-top:1px solid var(--grid)}
+.setrow:first-child{border-top:0}
+.setrow .setname{flex:1; min-width:0}
+.setrow .setname .n{font-weight:650; display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+.setrow .setname .s{font-size:13px; color:var(--muted)}
+.iconbtn{border:0; background:var(--page); box-shadow:inset 0 0 0 1px var(--ring); color:var(--ink-2);
+  border-radius:9px; width:34px; height:34px; cursor:pointer; flex:none;
+  display:inline-flex; align-items:center; justify-content:center}
+.iconbtn:disabled{opacity:.3}
+.togglechip{border:0; cursor:pointer; font-family:inherit; border-radius:999px; padding:8px 16px;
+  font-size:14px; font-weight:650; background:var(--page); color:var(--ink-2);
+  box-shadow:inset 0 0 0 1px var(--ring)}
+.togglechip.on.D1{background:var(--tint-a-bg); color:var(--tint-a-ink); box-shadow:none}
+.togglechip.on.D2{background:var(--tint-b-bg); color:var(--tint-b-ink); box-shadow:none}
+
+/* chart */
+.viz-root{background:var(--surface); border-radius:12px; box-shadow:inset 0 0 0 1px var(--ring), var(--shadow); padding:14px}
+.viz-root h3{margin:0 0 2px; font-size:15px}
+.viz-root .vsub{color:var(--muted); font-size:13px; margin-bottom:8px}
+.viz-root svg{display:block; width:100%; height:auto; touch-action:pan-y}
+.viz-tip{position:absolute; pointer-events:none; background:var(--ink); color:var(--page);
+  border-radius:8px; padding:5px 9px; font-size:12.5px; font-weight:650; white-space:nowrap;
+  transform:translate(-50%,-130%); opacity:0; transition:opacity .1s}
+details.datatable{margin-top:10px}
+details.datatable summary{color:var(--accent); font-size:14px; font-weight:650; cursor:pointer}
+details.datatable table{width:100%; font-size:14px; border-collapse:collapse; margin-top:6px}
+details.datatable td,details.datatable th{padding:5px 6px; border-top:1px solid var(--grid); text-align:left}
+details.datatable td:last-child,details.datatable th:last-child{text-align:right; font-variant-numeric:tabular-nums}
+
+/* video overlay */
+.overlay{position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.85);
+  display:flex; align-items:center; justify-content:center; flex-direction:column; padding:16px}
+.overlay .close{position:absolute; top:calc(14px + env(safe-area-inset-top)); right:16px;
+  border:0; background:rgba(255,255,255,.15); color:#fff; width:38px; height:38px; border-radius:999px; cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center}
+.overlay video, .overlay iframe{width:100%; max-width:560px; aspect-ratio:16/9; border:0; border-radius:12px; background:#000}
+.overlay .ytlink{color:#9ec5f4; margin-top:12px; font-size:14px}
+
+.note-inline{white-space:pre-wrap; color:var(--ink-2); font-size:15px}
+.toast{position:fixed; left:50%; bottom:calc(84px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  background:var(--ink); color:var(--page); padding:10px 18px; border-radius:999px; font-size:14px; font-weight:650;
+  z-index:60; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap; max-width:92vw; overflow:hidden; text-overflow:ellipsis}
+.toast.show{opacity:1}
+.toast.pr{background:#8a6100; color:#fff}
+</style>
+</head>
+<body>
+<header class="appbar" id="appbar"></header>
+<main id="main"></main>
+<nav class="tabs" id="tabs">
+  <a href="#home" data-tab="home"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10.5 9-7.5 9 7.5"/><path d="M5 9.6V21h14V9.6"/></svg>Home</a>
+  <a href="#weeks" data-tab="weeks"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>Weeks</a>
+  <a href="#progress" data-tab="progress"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="m7.5 14 4-4.5 3 3L20 6.5"/></svg>Progress</a>
+  <a href="#settings" data-tab="settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8v8M3.5 10v4M17 8v8M20.5 10v4M7 12h10"/></svg>Exercises</a>
+</nav>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* ================= IndexedDB ================= */
+const DB_NAME='gym-trainer', DB_VER=1;
+let db=null;
+function openDB(){
+  return new Promise((res,rej)=>{
+    const rq=indexedDB.open(DB_NAME,DB_VER);
+    rq.onupgradeneeded=e=>{
+      const d=e.target.result;
+      if(!d.objectStoreNames.contains('kv')) d.createObjectStore('kv',{keyPath:'key'});
+      if(!d.objectStoreNames.contains('entries')) d.createObjectStore('entries',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('videos')) d.createObjectStore('videos',{keyPath:'id'});
+    };
+    rq.onsuccess=()=>res(rq.result);
+    rq.onerror=()=>rej(rq.error);
+  });
+}
+function tx(store,mode,fn){
+  return new Promise((res,rej)=>{
+    const t=db.transaction(store,mode), s=t.objectStore(store);
+    let out; const r=fn(s); if(r&&'onsuccess'in r){ r.onsuccess=()=>out=r.result; }
+    t.oncomplete=()=>res(out); t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error);
+  });
+}
+const kvGet =k=>tx('kv','readonly',s=>s.get(k)).then(r=>r?r.value:undefined);
+const kvSet =(k,v)=>tx('kv','readwrite',s=>s.put({key:k,value:v}));
+const entryPut=e=>tx('entries','readwrite',s=>s.put(e));
+const entryDel=id=>tx('entries','readwrite',s=>s.delete(id));
+const entryAll=()=>tx('entries','readonly',s=>s.getAll());
+const videoPut=(id,blob)=>tx('videos','readwrite',s=>s.put({id,blob}));
+const videoGet=id=>tx('videos','readonly',s=>s.get(id)).then(r=>r?r.blob:null);
+const videoDel=id=>tx('videos','readwrite',s=>s.delete(id));
+
+/* ================= state & seed ================= */
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+let S={t:null, entries:[]};
+
+function seedTemplates(){
+  const ex=(name,d1,d2,hasWeight)=>({id:uid(),name,cue:'',hasWeight:hasWeight!==false,
+    weight:null,sets:3,reps:12,d1,d2,youtube:'',videoId:null});
+  return { exercises:[
+    ex('Shoulder',              true,  false),
+    ex('Leg Extension',         true,  false),
+    ex('Leg Pull/Curl',         true,  false),
+    ex('Leg Press',             true,  false),
+    ex('Calf Raises',           true,  false),
+    ex('Biceps Curl Machine',   false, true),
+    ex('Biceps Dumbbells',      false, true),
+    ex('Triceps Pull Down',     false, true),
+    ex('Triceps Row',           false, true),
+    ex('Back Lat Pull',         false, true),
+    ex('Back Lat Pull 2',       false, true),
+    ex('Chest Press',           true,  false),
+    ex('Core Sit Ups',          true,  true, false),
+    ex('Core Machine',          true,  true),
+  ]};
+}
+async function loadState(){
+  let t=await kvGet('templates');
+  if(!t){ t=seedTemplates(); await kvSet('templates',t); }
+  S.t=t;
+  S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
+}
+const saveTemplates=()=>kvSet('templates',S.t);
+async function saveEntry(e){ await entryPut(e);
+  S.entries=S.entries.filter(x=>x.id!==e.id).concat([e]).sort((a,b)=>(b.date.localeCompare(a.date))||(b.createdAt-a.createdAt)); }
+async function deleteEntry(id){
+  await entryDel(id); S.entries=S.entries.filter(x=>x.id!==id);
+}
+const dayList=plan=>S.t.exercises.filter(e=>plan==='D1'?e.d1:e.d2);
+const entryFor=date=>S.entries.find(e=>e.date===date);
+
+/* snapshot row from a template exercise */
+function rowFrom(e,partOfPlan){
+  return {name:e.name, cue:e.cue, hasWeight:e.hasWeight, weight:e.weight,
+    sets:e.sets, reps:e.reps, skipped:false, partOfPlan:!!partOfPlan,
+    youtube:e.youtube||'', videoId:e.videoId||null};
+}
+
+/* ================= helpers ================= */
+const $=sel=>document.querySelector(sel);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const todayStr=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+function fmtDate(isoStr){
+  const [y,m,d]=isoStr.split('-').map(Number);
+  const dt=new Date(y,m-1,d);
+  if(isoStr===todayStr()) return 'Today';
+  const yd=new Date(); yd.setDate(yd.getDate()-1);
+  if(isoStr===iso(yd)) return 'Yesterday';
+  return dt.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short',year:(dt.getFullYear()===new Date().getFullYear()?undefined:'numeric')});
+}
+const fmtW=x=>!x.hasWeight?'':(x.weight==null?'— kg':x.weight+' kg');
+const fmtVol=x=>x.sets+' × '+x.reps;
+function bundleLabel(e){
+  const extras=e.exercises.filter(x=>!x.partOfPlan).length;
+  if(!e.plans.length) return 'Mixed ('+e.exercises.length+')';
+  let base=e.plans.includes('D1')&&e.plans.includes('D2')?'Day 1+2':(e.plans[0]==='D1'?'Day 1':'Day 2');
+  return extras?base+' +'+extras+' extra':base;
+}
+function chipInfo(e){
+  if(!e.plans.length) return {cls:'MIX',txt:'Mix'};
+  if(e.plans.length>1) return {cls:'D1',txt:'D1+2'};
+  return {cls:e.plans[0],txt:e.plans[0]};
+}
+function weekCount(){
+  const now=new Date(); const day=(now.getDay()+6)%7;
+  const mon=new Date(now); mon.setDate(now.getDate()-day);
+  return S.entries.filter(e=>e.date>=iso(mon)).length;
+}
+function toast(msg,pr){ const t=$('#toast'); t.textContent=msg; t.classList.toggle('pr',!!pr);
+  t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),pr?3200:1800); }
+function ytId(url){
+  if(!url) return null;
+  const m=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?[^#]*v=|shorts\/|embed\/))([A-Za-z0-9_-]{6,20})/);
+  return m?m[1]:null;
+}
+const ICONS={
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  chevR:'<path d="m9 18 6-6-6-6"/>',
+  chevL:'<path d="m15 18-6-6 6-6"/>',
+  chevU:'<path d="m6 15 6-6 6 6"/>',
+  chevD:'<path d="m6 9 6 6 6-6"/>',
+  play:'<path d="M8.5 5.5 18 12l-9.5 6.5Z" fill="currentColor" stroke="none"/>',
+  pencil:'<path d="M17.2 3.3a2.4 2.4 0 1 1 3.5 3.5L7.5 20 3 21l1-4.5Z"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  trophy:'<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 5H4v1.5A3.5 3.5 0 0 0 7.5 10M17 5h3v1.5A3.5 3.5 0 0 1 16.5 10"/>',
+  bolt:'<path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H13z"/>',
+};
+const ico=(n,s=20,w=2)=>'<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+ICONS[n]+'</svg>';
+
+/* ================= PR logic ================= */
+/* best weight per exercise name over entries strictly BEFORE date, excluding entry id */
+function bestBefore(date,excludeId){
+  const best={};
+  for(const e of S.entries){
+    if(e.id===excludeId||e.date>=date) continue;
+    for(const x of e.exercises){
+      if(x.skipped||!x.hasWeight||x.weight==null) continue;
+      if(best[x.name]==null||x.weight>best[x.name]) best[x.name]=x.weight;
+    }
+  }
+  return best;
+}
+function computePRs(b){
+  const best=bestBefore(b.date,b.id);
+  const prs=[]; const seen={};
+  for(const x of b.exercises){
+    if(x.skipped||!x.hasWeight||x.weight==null) continue;
+    const prior=Math.max(best[x.name]!=null?best[x.name]:-Infinity, seen[x.name]!=null?seen[x.name]:-Infinity);
+    if(best[x.name]!=null&&x.weight>prior) prs.push({name:x.name,weight:x.weight});
+    if(seen[x.name]==null||x.weight>seen[x.name]) seen[x.name]=x.weight;
+  }
+  b.prs=prs;
+}
+function prToast(b){
+  if(!b.prs||!b.prs.length) return false;
+  if(b.prs.length===1) toast('New PR — '+b.prs[0].name+' '+b.prs[0].weight+' kg',true);
+  else toast(b.prs.length+' new PRs today',true);
+  return true;
+}
+
+/* ================= video overlay ================= */
+let overlayEl=null;
+async function openVideo(ex){
+  closeOverlay();
+  const ov=document.createElement('div'); ov.className='overlay'; overlayEl=ov;
+  const close=document.createElement('button'); close.className='close'; close.innerHTML=ico('x',17);
+  close.onclick=closeOverlay; ov.appendChild(close);
+  ov.addEventListener('click',e=>{ if(e.target===ov) closeOverlay(); });
+  if(ex.videoId){
+    const blob=await videoGet(ex.videoId);
+    if(blob){ const v=document.createElement('video'); v.controls=true; v.playsInline=true; v.src=URL.createObjectURL(blob); ov._url=v.src; ov.appendChild(v); }
+    else{ const p=document.createElement('p'); p.style.color='#fff'; p.textContent='Video not found on this device.'; ov.appendChild(p); }
+  } else if(ytId(ex.youtube)){
+    const id=ytId(ex.youtube);
+    const f=document.createElement('iframe');
+    f.src='https://www.youtube-nocookie.com/embed/'+id+'?playsinline=1';
+    f.allow='autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.allowFullscreen=true; ov.appendChild(f);
+    const a=document.createElement('a'); a.className='ytlink'; a.href=ex.youtube; a.target='_blank'; a.rel='noopener';
+    a.textContent='Open in YouTube ↗'; ov.appendChild(a);
+  }
+  document.body.appendChild(ov);
+}
+function closeOverlay(){ if(overlayEl){ if(overlayEl._url) URL.revokeObjectURL(overlayEl._url); overlayEl.remove(); overlayEl=null; } }
+
+/* ================= router ================= */
+function nav(hash){ location.hash=hash; }
+window.addEventListener('hashchange',render);
+function setBar(title, backHash){
+  const bar=$('#appbar'); bar.innerHTML='';
+  if(backHash!=null){ const b=document.createElement('button'); b.className='backbtn'; b.innerHTML=ico('chevL',20)+'Back';
+    b.onclick=()=>nav(backHash); bar.appendChild(b); }
+  const h=document.createElement('h1'); h.textContent=title; bar.appendChild(h);
+}
+function setTab(name){
+  document.querySelectorAll('nav.tabs a').forEach(a=>a.classList.toggle('active',a.dataset.tab===name));
+}
+function render(){
+  closeOverlay();
+  const h=location.hash.replace(/^#/,'')||'home';
+  const parts=h.split('/');
+  const M=$('#main'); M.innerHTML=''; window.scrollTo(0,0);
+  try{
+    if(parts[0]==='home') return viewHome(M);
+    if(parts[0]==='capture') return viewCapture(M,parts[1]);
+    if(parts[0]==='single'&&!parts[1]) return viewPicker(M);
+    if(parts[0]==='single') return viewSingle(M,parts[1]);
+    if(parts[0]==='entry') return viewDetail(M,parts[1]);
+    if(parts[0]==='editday') return viewEditDay(M,parts[1]);
+    if(parts[0]==='weeks') return viewWeeks(M);
+    if(parts[0]==='settings') return viewSettings(M);
+    if(parts[0]==='exercise') return viewExercise(M,parts[1]);
+    if(parts[0]==='progress') return viewProgress(M,parts.slice(1).join('/'));
+    viewHome(M);
+  }catch(err){ M.innerHTML='<p class="empty">Something went wrong: '+esc(err.message)+'</p>'; console.error(err); }
+}
+
+/* ================= exercise row control (shared by capture/edit) ================= */
+function buildRow(x,opts){
+  opts=opts||{};
+  const row=document.createElement('div'); row.className='exrow'+(x.skipped?' skipped':'');
+  const hasVid=x.videoId||ytId(x.youtube);
+  row.innerHTML=`<div class="extitle">
+      <span class="exname">${esc(x.name)}</span>
+      ${hasVid?'<button class="videobtn" title="Watch video">'+ico('play',15)+'</button>':''}
+      <button class="skipbtn ${x.skipped?'on':''}">${x.skipped?'Skipped':'Skip'}</button>
+      ${opts.removable?'<button class="rmbtn" title="Remove">'+ico('x',14)+'</button>':''}
+    </div>
+    ${x.cue?'<div class="cue">'+esc(x.cue)+'</div>':''}
+    <div class="exbody"><div class="controls"></div></div>`;
+  if(hasVid) row.querySelector('.videobtn').onclick=()=>openVideo(x);
+  const skipB=row.querySelector('.skipbtn');
+  skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
+    skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip'; };
+  if(opts.removable) row.querySelector('.rmbtn').onclick=()=>opts.onRemove(row);
+  const ctls=row.querySelector('.controls');
+  if(x.hasWeight){
+    ctls.appendChild(stepCtl('Weight (kg)', x.weight, 2.5, v=>{ x.weight=v;
+      row.querySelector('.stepper').classList.toggle('blankhl',v==null); }, {blankable:true}));
+    if(x.weight==null) row.querySelector('.stepper').classList.add('blankhl');
+  }
+  ctls.appendChild(stepCtl('Sets', x.sets, 1, v=>x.sets=v));
+  ctls.appendChild(stepCtl('Reps', x.reps, 1, v=>x.reps=v));
+  return row;
+}
+function stepCtl(label,value,step,onChange,opts){
+  opts=opts||{};
+  const d=document.createElement('div'); d.className='ctl';
+  d.innerHTML=`<label>${esc(label)}</label><div class="stepper">
+    <button type="button">−</button><input type="text" inputmode="decimal" ${opts.blankable?'placeholder="add"':''} value="${value==null?'':value}"><button type="button">+</button></div>`;
+  const [minus,plus]=d.querySelectorAll('button'); const inp=d.querySelector('input');
+  const set=v=>{ if(v==null){ inp.value=''; onChange(null); return; }
+    v=Math.round(v*100)/100; if(v<0)v=0; inp.value=v; onChange(v); };
+  const cur=()=>{ const v=parseFloat(String(inp.value).replace(',','.')); return isNaN(v)?null:v; };
+  minus.onclick=()=>{ const c=cur(); if(c==null){ set(opts.blankable?null:0); } else set(c-step); };
+  plus.onclick=()=>{ const c=cur(); set(c==null?step:(c+step)); };
+  inp.oninput=()=>{ const c=cur(); if(c!=null) onChange(c); else if(opts.blankable&&inp.value.trim()==='') onChange(null); };
+  inp.onblur=()=>{ const c=cur(); if(c==null&&opts.blankable) set(null); else set(c==null?0:c); };
+  return d;
+}
+
+/* ================= views ================= */
+function viewHome(M){
+  setBar('Gym Trainer'); setTab('home');
+  const wc=weekCount();
+  M.innerHTML=`
+    <div class="btnrow" style="margin-top:0">
+      <button class="btn" id="bD1">${ico('plus',17)} Day 1</button>
+      <button class="btn" id="bD2">${ico('plus',17)} Day 2</button>
+    </div>
+    <button class="btn secondary" id="bSingle">${ico('search',16)} Add Single Exercise</button>
+    <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
+    <div id="feed"></div>`;
+  $('#bD1').onclick=()=>nav('capture/D1');
+  $('#bD2').onclick=()=>nav('capture/D2');
+  $('#bSingle').onclick=()=>nav('single');
+  const feed=$('#feed');
+  if(!S.entries.length){ feed.innerHTML='<p class="empty">Nothing here yet.<br>Add your first workout above.</p>'; return; }
+  for(const e of S.entries){
+    const c=document.createElement('div'); c.className='card tappable';
+    const ci=chipInfo(e);
+    const done=e.exercises.filter(x=>!x.skipped).length, skip=e.exercises.length-done;
+    const sub=done+' exercise'+(done!==1?'s':'')+(skip?', '+skip+' skipped':'')+(e.note?' · note':'');
+    const pr=(e.prs&&e.prs.length)?'<span class="pr-ink">'+ico('trophy',15)+'</span>':'';
+    c.innerHTML=`<div class="cardhead"><span class="badge ${ci.cls}">${esc(bundleLabel(e).startsWith('Mixed')?'Mix':ci.txt)}</span>
+      <span class="date">${esc(fmtDate(e.date))}</span>${pr}<span class="spacer"></span><span class="chev">${ico('chevR',16)}</span></div>
+      <div class="cardsub">${esc(bundleLabel(e))} · ${esc(sub)}</div>`;
+    c.onclick=()=>nav('entry/'+e.id);
+    feed.appendChild(c);
+  }
+}
+
+/* plan capture: pre-filled from template, absorbing today's bundle values by name */
+function viewCapture(M,plan){
+  if(plan!=='D1'&&plan!=='D2'){ nav('home'); return; }
+  setTab('home');
+  setBar(plan==='D1'?'Day 1':'Day 2','home');
+  const rows=dayList(plan).map(e=>rowFrom(e,true));
+  const seedFrom=entryFor(todayStr());
+  if(seedFrom) for(const r of rows){
+    const ex=seedFrom.exercises.find(x=>x.name===r.name);
+    if(ex){ r.weight=ex.weight; r.sets=ex.sets; r.reps=ex.reps; r.skipped=ex.skipped; }
+  }
+  if(!rows.length){ M.innerHTML='<p class="empty">No exercises assigned to this day yet — add some in the Exercises tab.</p>'; return; }
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${todayStr()}" max="${todayStr()}"></div>
+    <div id="exlist"></div>
+    <div class="field"><label>Note (optional)</label><textarea id="fNote" placeholder="e.g. felt strong today"></textarea></div>
+    <button class="btn" id="bSave">Save Workout</button>`;
+  M.appendChild(wrap);
+  const list=$('#exlist');
+  rows.forEach(x=>list.appendChild(buildRow(x)));
+  $('#bSave').onclick=async()=>{
+    const date=$('#fDate').value||todayStr();
+    const note=$('#fNote').value.trim();
+    let b=entryFor(date);
+    if(!b){
+      b={id:uid(), date, createdAt:Date.now(), plans:[plan], exercises:rows, note};
+    } else {
+      for(const r of rows){
+        const ex=b.exercises.find(x=>x.name===r.name);
+        if(ex){ ex.weight=r.weight; ex.sets=r.sets; ex.reps=r.reps; ex.skipped=r.skipped; ex.partOfPlan=true; }
+        else b.exercises.push(r);
+      }
+      if(!b.plans.includes(plan)) b.plans.push(plan);
+      if(note) b.note=b.note?b.note+'\n'+note:note;
+    }
+    computePRs(b);
+    await saveEntry(b);
+    if(!prToast(b)) toast('Workout saved');
+    nav('home');
+  };
+}
+
+/* single exercise picker */
+function viewPicker(M){
+  setTab('home'); setBar('Add Single Exercise','home');
+  M.innerHTML=`<div class="field"><input type="search" id="fQ" placeholder="Search exercise…"></div><div id="plist"></div>`;
+  const listEl=$('#plist');
+  function draw(q){
+    listEl.innerHTML='';
+    const ql=(q||'').toLowerCase();
+    const hits=S.t.exercises.filter(e=>e.name.toLowerCase().includes(ql));
+    if(!hits.length){ listEl.innerHTML='<p class="empty">No exercise matches.</p>'; return; }
+    for(const e of hits){
+      const b=document.createElement('button'); b.className='pickrow';
+      b.innerHTML=`<span class="pname">${esc(e.name)}</span>
+        ${e.d1?'<span class="daychip D1">D1</span>':''}${e.d2?'<span class="daychip D2">D2</span>':''}
+        <span class="chev">${ico('chevR',16)}</span>`;
+      b.onclick=()=>nav('single/'+e.id);
+      listEl.appendChild(b);
+    }
+  }
+  draw('');
+  $('#fQ').oninput=e=>draw(e.target.value);
+}
+function viewSingle(M,exId){
+  setTab('home');
+  const e=S.t.exercises.find(x=>x.id===exId);
+  if(!e){ nav('single'); return; }
+  setBar(e.name,'single');
+  const x=rowFrom(e,false);
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${todayStr()}" max="${todayStr()}"></div><div id="exlist"></div>
+    <button class="btn" id="bSave">Add to Workout</button>`;
+  M.appendChild(wrap);
+  $('#exlist').appendChild(buildRow(x));
+  $('#bSave').onclick=async()=>{
+    const date=$('#fDate').value||todayStr();
+    let b=entryFor(date);
+    if(!b) b={id:uid(), date, createdAt:Date.now(), plans:[], exercises:[x], note:''};
+    else b.exercises.push(x);
+    computePRs(b);
+    await saveEntry(b);
+    if(!prToast(b)) toast(e.name+' added to '+fmtDate(date));
+    nav('home');
+  };
+}
+
+/* detail & edit */
+function viewDetail(M,id){
+  setTab('home');
+  const e=S.entries.find(x=>x.id===id);
+  if(!e){ setBar('Workout','home'); M.innerHTML='<p class="empty">Entry not found.</p>'; return; }
+  setBar(bundleLabel(e)+' · '+fmtDate(e.date),'home');
+  const rows=e.exercises.map(x=>{
+    const hasVid=x.videoId||ytId(x.youtube);
+    return `<tr><td>${esc(x.name)}${hasVid?' <button class="videobtn" data-v="'+esc(x.name)+'" style="width:26px;height:26px">'+ico('play',12)+'</button>':''}${x.skipped?'<br><span class="skiptag">SKIPPED</span>':''}</td>
+      <td class="num">${x.skipped?'—':(x.hasWeight?esc(fmtW(x))+'<br>':'')+esc(fmtVol(x))}</td></tr>`;
+  }).join('');
+  const prHtml=(e.prs&&e.prs.length)?'<div class="card">'+e.prs.map(p=>
+    '<div class="prline">'+ico('trophy',16)+'<span>New PR — '+esc(p.name)+' '+p.weight+' kg</span></div>').join('')+'</div>':'';
+  M.innerHTML=`${prHtml}<div class="card"><table class="dtl">${rows}</table></div>
+    ${e.note?'<div class="card"><div class="cue" style="margin:0 0 4px">Note</div><div class="note-inline">'+esc(e.note)+'</div></div>':''}
+    <div class="btnrow"><button class="btn secondary" id="bEdit">Edit</button><button class="btn danger" id="bDel">Delete</button></div>`;
+  M.querySelectorAll('.videobtn').forEach(b=>{
+    b.onclick=()=>{ const x=e.exercises.find(v=>v.name===b.dataset.v); if(x) openVideo(x); };
+  });
+  $('#bEdit').onclick=()=>nav('editday/'+e.id);
+  $('#bDel').onclick=async()=>{
+    if(!confirm('Delete this whole day? This cannot be undone.')) return;
+    await deleteEntry(id); toast('Deleted'); nav('home');
+  };
+}
+function viewEditDay(M,id){
+  setTab('home');
+  const src=S.entries.find(x=>x.id===id);
+  if(!src){ setBar('Edit','home'); M.innerHTML='<p class="empty">Entry not found.</p>'; return; }
+  const b=JSON.parse(JSON.stringify(src));
+  setBar('Edit · '+fmtDate(b.date),'entry/'+id);
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${b.date}"></div>
+    <div id="exlist"></div>
+    <div class="field"><label>Note (optional)</label><textarea id="fNote">${esc(b.note||'')}</textarea></div>
+    <button class="btn" id="bSave">Save Changes</button>`;
+  M.appendChild(wrap);
+  const list=$('#exlist');
+  b.exercises.forEach(x=>{
+    list.appendChild(buildRow(x,{removable:true,onRemove:(rowEl)=>{
+      b.exercises=b.exercises.filter(v=>v!==x); rowEl.remove();
+    }}));
+  });
+  $('#bSave').onclick=async()=>{
+    const nd=$('#fDate').value||b.date;
+    if(nd!==b.date&&entryFor(nd)){ alert('There is already a workout on '+fmtDate(nd)+'. Edit that day instead, or delete one of them.'); return; }
+    b.date=nd;
+    b.note=$('#fNote').value.trim();
+    if(!b.exercises.length){
+      if(!confirm('No exercises left — delete this day entirely?')) return;
+      await deleteEntry(id); toast('Deleted'); nav('home'); return;
+    }
+    computePRs(b);
+    await saveEntry(b);
+    toast('Updated');
+    nav('entry/'+id);
+  };
+}
+
+/* ================= weeks overview ================= */
+function mondayOf(dateStr){
+  const [y,m,d]=dateStr.split('-').map(Number);
+  const dt=new Date(y,m-1,d);
+  dt.setDate(dt.getDate()-((dt.getDay()+6)%7));
+  return dt;
+}
+function viewWeeks(M){
+  setBar('Weeks'); setTab('weeks');
+  if(!S.entries.length){ M.innerHTML='<p class="empty">Once workouts are logged, each week shows up here.</p>'; return; }
+  const thisMon=mondayOf(todayStr());
+  const firstMon=mondayOf(S.entries[S.entries.length-1].date);
+  const weeks=[];
+  for(let mon=new Date(thisMon); mon>=firstMon && weeks.length<52; mon.setDate(mon.getDate()-7)){
+    weeks.push(new Date(mon));
+  }
+  weeks.forEach((mon,idx)=>{
+    const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+    const inWeek=S.entries.filter(e=>e.date>=iso(mon)&&e.date<=iso(sun)).sort((a,b)=>a.date.localeCompare(b.date));
+    const prCount=inWeek.reduce((n,e)=>n+((e.prs&&e.prs.length)||0),0);
+    let label;
+    if(idx===0) label='This week';
+    else if(idx===1) label='Last week';
+    else{
+      const sameM=mon.getMonth()===sun.getMonth();
+      const yr=mon.getFullYear()!==new Date().getFullYear()?' '+mon.getFullYear():'';
+      label=mon.toLocaleDateString(undefined,{day:'numeric',month:'short'})+' – '+
+        sun.toLocaleDateString(undefined,sameM?{day:'numeric'}:{day:'numeric',month:'short'})+yr;
+    }
+    const row=document.createElement('div'); row.className='weekrow'+(inWeek.length?'':' zero');
+    row.innerHTML=`<div class="wtop"><span class="wlabel">${esc(label)}</span>
+      <span class="wcount">${inWeek.length?inWeek.length+' workout'+(inWeek.length>1?'s':''):'—'}</span></div>`;
+    if(inWeek.length){
+      const chips=document.createElement('div'); chips.className='wchips';
+      for(const e of inWeek){
+        const ci=chipInfo(e);
+        const c=document.createElement('button'); c.className='wchip '+ci.cls; c.textContent=ci.txt;
+        c.title=fmtDate(e.date);
+        c.onclick=()=>nav('entry/'+e.id);
+        chips.appendChild(c);
+      }
+      if(prCount) chips.insertAdjacentHTML('beforeend','<span class="wpr">'+ico('trophy',13)+prCount+' PR'+(prCount>1?'s':'')+'</span>');
+      row.appendChild(chips);
+    }
+    M.appendChild(row);
+  });
+}
+
+/* ================= settings ================= */
+function viewSettings(M){
+  setBar('Exercises'); setTab('settings');
+  const card=document.createElement('div'); card.className='card';
+  S.t.exercises.forEach((ex,i)=>{
+    const row=document.createElement('div'); row.className='setrow';
+    row.innerHTML=`<div class="setname"><div class="n">${esc(ex.name)}
+        ${ex.d1?'<span class="daychip D1">D1</span>':''}${ex.d2?'<span class="daychip D2">D2</span>':''}</div>
+      <div class="s">${ex.hasWeight?(ex.weight==null?'no weight yet':ex.weight+' kg')+' · ':''}${esc(fmtVol(ex))}${(ex.videoId||ytId(ex.youtube))?' · video':''}</div></div>
+      <button class="iconbtn up" ${i===0?'disabled':''}>${ico('chevU',16)}</button>
+      <button class="iconbtn down" ${i===S.t.exercises.length-1?'disabled':''}>${ico('chevD',16)}</button>
+      <button class="iconbtn edit">${ico('pencil',15)}</button>`;
+    row.querySelector('.up').onclick=async()=>{ S.t.exercises.splice(i-1,0,S.t.exercises.splice(i,1)[0]); await saveTemplates(); render(); };
+    row.querySelector('.down').onclick=async()=>{ S.t.exercises.splice(i+1,0,S.t.exercises.splice(i,1)[0]); await saveTemplates(); render(); };
+    row.querySelector('.edit').onclick=()=>nav('exercise/'+ex.id);
+    card.appendChild(row);
+  });
+  M.appendChild(card);
+  const add=document.createElement('button'); add.className='btn secondary';
+  add.textContent='+ Add exercise'; add.onclick=()=>nav('exercise/new');
+  M.appendChild(add);
+  const bk=document.createElement('div');
+  bk.innerHTML=`<div class="sectionlabel">Backup</div>
+    <div class="btnrow"><button class="btn secondary" id="bExp">Export data</button><button class="btn secondary" id="bImp">Import</button></div>
+    <p class="cue" style="margin:4px 2px 24px">Data lives only on this phone. Export regularly as a backup (videos are not included in exports).</p>
+    <input type="file" id="fImp" accept="application/json,.json" class="hidden">`;
+  M.appendChild(bk);
+  $('#bExp').onclick=exportData;
+  $('#bImp').onclick=()=>$('#fImp').click();
+  $('#fImp').onchange=importData;
+}
+
+function viewExercise(M,exId){
+  setTab('settings');
+  const isNew=exId==='new';
+  const ex=isNew?{id:uid(),name:'',cue:'',hasWeight:true,weight:null,sets:3,reps:12,d1:false,d2:false,youtube:'',videoId:null}
+               :S.t.exercises.find(x=>x.id===exId);
+  if(!ex){ nav('settings'); return; }
+  const w=JSON.parse(JSON.stringify(ex));
+  let newVideoBlob=null, removeVideo=false;
+  setBar(isNew?'New exercise':'Edit exercise','settings');
+  M.innerHTML=`
+    <div class="field"><label>Name</label><input type="text" id="fName" value="${esc(w.name)}" placeholder="Exercise name"></div>
+    <div class="field"><label>Cue / machine setting (optional)</label><input type="text" id="fCue" value="${esc(w.cue)}" placeholder="e.g. seat position 4"></div>
+    <div class="field"><label>Part of</label>
+      <div class="btnrow" style="margin:0">
+        <button class="togglechip D1 ${w.d1?'on':''}" id="tD1" style="flex:1">Day 1</button>
+        <button class="togglechip D2 ${w.d2?'on':''}" id="tD2" style="flex:1">Day 2</button>
+      </div></div>
+    <div class="field"><label>Type</label><select id="fType">
+      <option value="w">Weight + reps</option>
+      <option value="r">Reps only (bodyweight)</option></select></div>
+    <div class="field" id="loadField"></div>
+    <div class="controls" style="margin-bottom:14px" id="volCtl"></div>
+    <div class="field"><label>YouTube link (optional)</label><input type="url" id="fYt" value="${esc(w.youtube)}" placeholder="https://youtu.be/…"></div>
+    <div class="field"><label>Video from this phone (optional)</label>
+      <div class="btnrow" style="margin:0">
+        <button class="btn secondary small" id="bVid">${w.videoId?'Replace video':'Add video'}</button>
+        <button class="btn secondary small ${w.videoId?'':'hidden'}" id="bVidPlay">${ico('play',13)} Play</button>
+        <button class="btn secondary small ${w.videoId?'':'hidden'}" id="bVidDel" style="color:var(--danger)">Remove</button>
+      </div>
+      <input type="file" id="fVid" accept="video/*" class="hidden"></div>
+    <button class="btn" id="bSave">${isNew?'Add Exercise':'Save Exercise'}</button>
+    ${isNew?'':'<button class="btn danger" id="bDel" style="margin-top:10px">Delete Exercise</button>'}`;
+  $('#fType').value=w.hasWeight?'w':'r';
+  $('#tD1').onclick=e=>{ e.preventDefault(); w.d1=!w.d1; $('#tD1').classList.toggle('on',w.d1); };
+  $('#tD2').onclick=e=>{ e.preventDefault(); w.d2=!w.d2; $('#tD2').classList.toggle('on',w.d2); };
+  function renderLoadField(){
+    const lf=$('#loadField');
+    if(!w.hasWeight){ lf.innerHTML=''; return; }
+    lf.innerHTML='<label>Default weight (kg) — leave blank until known</label>';
+    lf.appendChild(stepCtl('',w.weight,2.5,v=>{ w.weight=v;
+      lf.querySelector('.stepper').classList.toggle('blankhl',v==null); },{blankable:true}));
+    lf.querySelector('.ctl label').remove();
+    if(w.weight==null) lf.querySelector('.stepper').classList.add('blankhl');
+  }
+  function renderVol(){
+    const vc=$('#volCtl'); vc.innerHTML='';
+    vc.appendChild(stepCtl('Default sets',w.sets,1,v=>w.sets=v));
+    vc.appendChild(stepCtl('Default reps',w.reps,1,v=>w.reps=v));
+  }
+  renderLoadField(); renderVol();
+  $('#fType').onchange=e=>{ w.hasWeight=e.target.value==='w'; if(!w.hasWeight) w.weight=null; renderLoadField(); };
+  $('#bVid').onclick=()=>$('#fVid').click();
+  $('#fVid').onchange=e=>{
+    const f=e.target.files[0]; if(!f) return;
+    newVideoBlob=f; removeVideo=false;
+    $('#bVid').textContent='Video selected ✓';
+    $('#bVidDel').classList.remove('hidden');
+  };
+  if(w.videoId) $('#bVidPlay').onclick=()=>openVideo(w);
+  $('#bVidDel').onclick=()=>{ removeVideo=true; newVideoBlob=null;
+    $('#bVid').textContent='Add video'; $('#bVidPlay').classList.add('hidden'); $('#bVidDel').classList.add('hidden'); };
+  $('#bSave').onclick=async()=>{
+    w.name=$('#fName').value.trim();
+    if(!w.name){ alert('Please give the exercise a name.'); return; }
+    w.cue=$('#fCue').value.trim(); w.youtube=$('#fYt').value.trim();
+    if(w.youtube&&!ytId(w.youtube)){ alert('That YouTube link doesn’t look right — please paste a normal YouTube video URL.'); return; }
+    if(removeVideo&&w.videoId){ await videoDel(w.videoId).catch(()=>{}); w.videoId=null; }
+    if(newVideoBlob){
+      if(w.videoId) await videoDel(w.videoId).catch(()=>{});
+      w.videoId='v_'+uid();
+      try{ await videoPut(w.videoId,newVideoBlob); }
+      catch(err){ alert('Could not store the video (possibly too large). Everything else was saved.'); w.videoId=null; }
+    }
+    if(isNew) S.t.exercises.push(w);
+    else { const i=S.t.exercises.findIndex(x=>x.id===w.id); S.t.exercises[i]=w; }
+    await saveTemplates(); toast('Saved'); nav('settings');
+  };
+  const bDel=$('#bDel');
+  if(bDel) bDel.onclick=async()=>{
+    if(!confirm('Remove "'+w.name+'"? Past workouts keep their history.')) return;
+    if(w.videoId) await videoDel(w.videoId).catch(()=>{});
+    S.t.exercises=S.t.exercises.filter(x=>x.id!==w.id);
+    await saveTemplates(); toast('Removed'); nav('settings');
+  };
+}
+
+/* ================= progress chart ================= */
+function progressSeries(){
+  const map=new Map();
+  const sorted=[...S.entries].sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
+  for(const e of sorted) for(const x of e.exercises){
+    if(x.skipped||!x.hasWeight||x.weight==null) continue;
+    if(!map.has(x.name)) map.set(x.name,[]);
+    map.get(x.name).push({date:e.date, value:x.weight});
+  }
+  // flag PRs: strictly above the running max, after the first point
+  for(const pts of map.values()){
+    let max=-Infinity;
+    pts.forEach((p,i)=>{ p.pr=i>0&&p.value>max; if(p.value>max)max=p.value; });
+  }
+  return map;
+}
+function viewProgress(M,selRaw){
+  setBar('Progress'); setTab('progress');
+  const series=progressSeries();
+  if(!series.size){
+    M.innerHTML='<p class="empty">Once workouts with weights are logged, weight progress per exercise shows up here.</p>';
+    return;
+  }
+  const names=[...series.keys()];
+  let sel=selRaw?decodeURIComponent(selRaw):names[0];
+  if(!series.has(sel)) sel=names[0];
+  const selWrap=document.createElement('div'); selWrap.className='field';
+  selWrap.innerHTML='<label>Exercise</label><select id="fSel">'+names.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('')+'</select>';
+  M.appendChild(selWrap);
+  $('#fSel').onchange=e=>{ location.replace('#progress/'+encodeURIComponent(e.target.value)); };
+  const pts=series.get(sel);
+  const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative';
+  const latest=pts[pts.length-1].value, first=pts[0].value;
+  const delta=latest-first;
+  const prTotal=pts.filter(p=>p.pr).length;
+  box.innerHTML=`<h3>${esc(sel)}</h3><div class="vsub">${pts.length} workout${pts.length>1?'s':''} · latest ${latest} kg${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(Math.round(delta*100)/100)} kg since first`:''}${prTotal?' · '+prTotal+' PR'+(prTotal>1?'s':''):''}</div>`;
+  box.appendChild(buildChart(pts,'kg'));
+  const dt=document.createElement('details'); dt.className='datatable';
+  dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th></th><th>kg</th></tr>'+
+    pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td><td>${p.pr?'PR':''}</td><td>${p.value}</td></tr>`).reverse().join('')+'</table>';
+  box.appendChild(dt);
+  M.appendChild(box);
+}
+function buildChart(pts,unit){
+  const W=520,H=260,padL=40,padR=14,padT=14,padB=30;
+  const n=pts.length;
+  let vmin=Math.min(...pts.map(p=>p.value)), vmax=Math.max(...pts.map(p=>p.value));
+  if(vmin===vmax){ vmin=Math.max(0,vmin-1); vmax=vmax+1; }
+  const span=vmax-vmin; vmin=Math.max(0,vmin-span*0.15); vmax=vmax+span*0.15;
+  const X=i=> n===1 ? (padL+(W-padL-padR)/2) : padL+(W-padL-padR)*(i/(n-1));
+  const Y=v=> padT+(H-padT-padB)*(1-(v-vmin)/(vmax-vmin));
+  const svgNS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(svgNS,'svg');
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('role','img');
+  svg.setAttribute('aria-label','Weight over time');
+  const mk=(tag,attrs)=>{ const el=document.createElementNS(svgNS,tag); for(const k in attrs) el.setAttribute(k,attrs[k]); return el; };
+  const ticks=[vmin+(vmax-vmin)*0.1, (vmin+vmax)/2, vmax-(vmax-vmin)*0.1].map(v=>Math.round(v*2)/2);
+  for(const tv of [...new Set(ticks)]){
+    svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:Y(tv),y2:Y(tv),stroke:'var(--grid)','stroke-width':1}));
+    const t=mk('text',{x:padL-6,y:Y(tv)+4,'text-anchor':'end','font-size':11,fill:'var(--muted)','font-family':'inherit'});
+    t.textContent=tv; svg.appendChild(t);
+  }
+  svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:H-padB,y2:H-padB,stroke:'var(--baseline)','stroke-width':1}));
+  const xl=mk('text',{x:X(0),y:H-10,'text-anchor':n===1?'middle':'start','font-size':11,fill:'var(--muted)','font-family':'inherit'});
+  xl.textContent=fmtDate(pts[0].date); svg.appendChild(xl);
+  if(n>1){ const xr=mk('text',{x:X(n-1),y:H-10,'text-anchor':'end','font-size':11,fill:'var(--muted)','font-family':'inherit'});
+    xr.textContent=fmtDate(pts[n-1].date); svg.appendChild(xr); }
+  if(n>1){
+    const d=pts.map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.value)).join(' ');
+    svg.appendChild(mk('path',{d,fill:'none',stroke:'var(--chart)','stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
+  }
+  pts.forEach((p,i)=>{
+    if(p.pr) svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.value),r:7.5,fill:'none',stroke:'var(--warn)','stroke-width':1.5}));
+    svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.value),r:5,fill:'var(--surface)'}));
+    svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.value),r:4,fill:'var(--chart)'}));
+  });
+  const cross=mk('line',{x1:0,x2:0,y1:padT,y2:H-padB,stroke:'var(--baseline)','stroke-width':1,opacity:0});
+  svg.appendChild(cross);
+  const tip=document.createElement('div'); tip.className='viz-tip';
+  const hit=mk('rect',{x:0,y:0,width:W,height:H,fill:'transparent'});
+  svg.appendChild(hit);
+  function showAt(clientX){
+    const r=svg.getBoundingClientRect();
+    const px=(clientX-r.left)/r.width*W;
+    let best=0,bd=1e9;
+    for(let i=0;i<n;i++){ const d=Math.abs(X(i)-px); if(d<bd){bd=d;best=i;} }
+    const p=pts[best];
+    cross.setAttribute('x1',X(best)); cross.setAttribute('x2',X(best)); cross.setAttribute('opacity',1);
+    tip.textContent=fmtDate(p.date)+' · '+p.value+' '+unit+(p.pr?' · PR':'');
+    tip.style.left=(X(best)/W*r.width)+'px';
+    tip.style.top=(Y(p.value)/H*r.height)+'px';
+    tip.style.opacity=1;
+  }
+  function hide(){ cross.setAttribute('opacity',0); tip.style.opacity=0; }
+  hit.addEventListener('pointermove',e=>showAt(e.clientX));
+  hit.addEventListener('pointerdown',e=>showAt(e.clientX));
+  hit.addEventListener('pointerleave',hide);
+  const holder=document.createElement('div'); holder.style.position='relative';
+  holder.appendChild(svg); holder.appendChild(tip);
+  return holder;
+}
+
+/* ================= export / import ================= */
+async function exportData(){
+  const payload={app:'gym-trainer', version:1, exportedAt:new Date().toISOString(),
+    templates:S.t, entries:S.entries};
+  const json=JSON.stringify(payload,null,1);
+  const name='gym-trainer-backup-'+todayStr()+'.json';
+  const file=new File([json],name,{type:'application/json'});
+  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file],title:'Gym Trainer backup'}); return; }catch(e){ if(e.name==='AbortError') return; }
+  }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([json],{type:'application/json'}));
+  a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+async function importData(ev){
+  const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
+  let data;
+  try{ data=JSON.parse(await f.text()); }catch(e){ alert('That file is not a valid backup.'); return; }
+  if(!data||data.app!=='gym-trainer'||!data.templates||!Array.isArray(data.entries)){ alert('That file is not a Gym Trainer backup.'); return; }
+  if(!confirm('Import backup from '+(data.exportedAt||'unknown date').slice(0,10)+'?\nThis REPLACES your exercises and all '+S.entries.length+' current entries with the '+data.entries.length+' entries in the backup.')) return;
+  await kvSet('templates',data.templates);
+  await tx('entries','readwrite',s=>{ s.clear(); for(const e of data.entries) s.put(e); });
+  await loadState(); toast('Backup imported'); nav('home'); render();
+}
+
+/* ================= boot ================= */
+(async function(){
+  try{
+    db=await openDB();
+    await loadState();
+  }catch(err){
+    $('#main').innerHTML='<p class="empty">Could not open local storage: '+esc(err.message)+'</p>';
+    return;
+  }
+  render();
+  if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
