@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Shoulder Trainer</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shoulder">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+:root{
+  color-scheme: light dark;
+  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --baseline:#c3c2b7; --ring:rgba(11,11,11,.10);
+  --sess-a:#2a78d6; --sess-b:#eb6834; --sess-c:#1baf7a;
+  --accent:#2a78d6; --physio:#4a3aa7; --injury:#ec835a; --danger:#d03b3b;
+  --chart:#2a78d6;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --ring:rgba(255,255,255,.10);
+    --sess-a:#3987e5; --sess-b:#d95926; --sess-c:#199e70;
+    --accent:#3987e5; --physio:#9085e9; --chart:#3987e5;
+  }
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--page); color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:16px; line-height:1.45;
+  padding-bottom:calc(64px + env(safe-area-inset-bottom));
+  overscroll-behavior-y:none;
+}
+header.appbar{
+  position:sticky; top:0; z-index:20; background:var(--page);
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+  display:flex; align-items:center; gap:10px; min-height:44px;
+  border-bottom:1px solid var(--ring);
+}
+header.appbar h1{font-size:19px; margin:0; font-weight:700; flex:1;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.backbtn{border:0;background:none;color:var(--accent);font-size:17px;padding:6px 4px;cursor:pointer;font-weight:600}
+main{padding:16px; max-width:560px; margin:0 auto}
+.hidden{display:none!important}
+
+/* buttons */
+.btn{
+  display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+  border:0; border-radius:14px; padding:15px 16px; font-size:17px; font-weight:650;
+  cursor:pointer; color:#fff; background:var(--accent); font-family:inherit;
+}
+.btn:active{filter:brightness(.9)}
+.btn.secondary{background:var(--surface); color:var(--ink); box-shadow:inset 0 0 0 1px var(--ring)}
+.btn.physio{background:var(--physio)}
+.btn.injury{background:var(--injury); color:#3a1503}
+@media (prefers-color-scheme: dark){ .btn.injury{color:#2b0f02} }
+.btn.danger{background:var(--danger)}
+.btn.small{width:auto; padding:8px 14px; font-size:15px; border-radius:10px}
+.btnrow{display:flex; gap:10px; margin:12px 0}
+.btnrow .btn{flex:1}
+
+/* cards */
+.card{
+  background:var(--surface); border-radius:14px; padding:14px;
+  box-shadow:inset 0 0 0 1px var(--ring); margin-bottom:10px;
+}
+.card.tappable{cursor:pointer}
+.card.tappable:active{filter:brightness(.96)}
+.cardhead{display:flex; align-items:center; gap:10px}
+.cardhead .date{font-weight:650}
+.cardhead .spacer{flex:1}
+.cardsub{color:var(--ink-2); font-size:14px; margin-top:4px}
+.chev{color:var(--muted)}
+
+/* badges */
+.badge{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:28px; height:28px; border-radius:9px; color:#fff; font-weight:800; font-size:15px;
+  padding:0 6px;
+}
+.badge.A{background:var(--sess-a)} .badge.B{background:var(--sess-b)} .badge.C{background:var(--sess-c)}
+.badge.physio{background:var(--physio)}
+.badge.injury{background:var(--injury); color:#3a1503}
+@media (prefers-color-scheme: dark){ .badge.injury{color:#2b0f02} }
+
+.weekline{color:var(--ink-2); font-size:14px; margin:14px 2px 8px}
+.sectionlabel{font-size:13px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:18px 2px 8px}
+.empty{color:var(--muted); text-align:center; padding:28px 10px; font-size:15px}
+
+/* exercise rows in capture/edit */
+.exrow{background:var(--surface); border-radius:14px; box-shadow:inset 0 0 0 1px var(--ring); padding:12px 14px; margin-bottom:10px}
+.exrow.skipped .exbody{opacity:.35}
+.exrow .extitle{display:flex; align-items:center; gap:8px}
+.exrow .exname{font-weight:650; flex:1}
+.cue{color:var(--muted); font-size:13px; margin-top:2px}
+.controls{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+.ctl{flex:1; min-width:104px}
+.ctl label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600}
+.stepper{display:flex; align-items:stretch; border-radius:10px; box-shadow:inset 0 0 0 1px var(--ring); overflow:hidden; background:var(--page)}
+.stepper button{border:0; background:none; color:var(--accent); font-size:18px; width:27px; cursor:pointer; font-weight:700; flex:none; padding:0}
+.stepper input{border:0; background:none; color:var(--ink); flex:1; width:100%; min-width:44px; text-align:center; font-size:16px; font-weight:650; padding:9px 0; font-variant-numeric:tabular-nums; font-family:inherit}
+.stepper input:focus{outline:none}
+input[type=text],input[type=date],input[type=url],textarea,select{
+  width:100%; border:0; border-radius:10px; box-shadow:inset 0 0 0 1px var(--ring);
+  background:var(--surface); color:var(--ink); padding:12px; font-size:16px; font-family:inherit;
+}
+textarea{min-height:96px; resize:vertical}
+.field{margin-bottom:14px}
+.field>label{display:block; font-size:13px; color:var(--muted); font-weight:650; margin:0 2px 6px}
+
+.skipbtn{border:0; border-radius:999px; padding:6px 12px; font-size:13px; font-weight:700;
+  background:var(--page); color:var(--ink-2); box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer; font-family:inherit}
+.skipbtn.on{background:var(--danger); color:#fff; box-shadow:none}
+.videobtn{border:0; border-radius:999px; width:32px; height:32px; font-size:15px;
+  background:var(--page); color:var(--accent); box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer}
+
+/* session pick */
+.pickbtn{display:flex; align-items:center; gap:14px; width:100%; border:0; border-radius:16px;
+  background:var(--surface); box-shadow:inset 0 0 0 1px var(--ring); padding:18px 16px; margin-bottom:12px;
+  cursor:pointer; text-align:left; font-family:inherit; color:var(--ink)}
+.pickbtn .badge{min-width:40px; height:40px; font-size:20px; border-radius:12px}
+.pickbtn .pickname{font-size:17px; font-weight:700}
+.pickbtn .picksub{font-size:13px; color:var(--muted)}
+
+/* detail table */
+table.dtl{width:100%; border-collapse:collapse; font-size:15px}
+table.dtl td{padding:8px 6px; border-top:1px solid var(--grid); vertical-align:top}
+table.dtl tr:first-child td{border-top:0}
+table.dtl td.num{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; color:var(--ink-2)}
+.skiptag{color:var(--danger); font-weight:700; font-size:12px; letter-spacing:.04em}
+
+/* tab bar */
+nav.tabs{
+  position:fixed; bottom:0; left:0; right:0; z-index:20;
+  display:flex; background:var(--page); border-top:1px solid var(--ring);
+  padding:6px 0 calc(6px + env(safe-area-inset-bottom));
+}
+nav.tabs a{flex:1; text-align:center; text-decoration:none; color:var(--muted); font-size:11px; font-weight:650; padding:4px 0}
+nav.tabs a .ico{display:block; font-size:22px; line-height:1.15}
+nav.tabs a.active{color:var(--accent)}
+
+/* settings list */
+.setrow{display:flex; align-items:center; gap:10px; padding:12px 2px; border-top:1px solid var(--grid)}
+.setrow:first-child{border-top:0}
+.setrow .setname{flex:1; min-width:0}
+.setrow .setname .n{font-weight:650}
+.setrow .setname .s{font-size:13px; color:var(--muted)}
+.iconbtn{border:0; background:var(--page); box-shadow:inset 0 0 0 1px var(--ring); color:var(--ink-2);
+  border-radius:9px; width:34px; height:34px; font-size:15px; cursor:pointer; flex:none}
+.iconbtn:disabled{opacity:.3}
+
+/* chart */
+.viz-root{background:var(--surface); border-radius:14px; box-shadow:inset 0 0 0 1px var(--ring); padding:14px}
+.viz-root h3{margin:0 0 2px; font-size:15px}
+.viz-root .vsub{color:var(--muted); font-size:13px; margin-bottom:8px}
+.viz-root svg{display:block; width:100%; height:auto; touch-action:pan-y}
+.viz-tip{position:absolute; pointer-events:none; background:var(--ink); color:var(--page);
+  border-radius:8px; padding:5px 9px; font-size:12.5px; font-weight:650; white-space:nowrap;
+  transform:translate(-50%,-130%); opacity:0; transition:opacity .1s}
+details.datatable{margin-top:10px}
+details.datatable summary{color:var(--accent); font-size:14px; font-weight:650; cursor:pointer}
+details.datatable table{width:100%; font-size:14px; border-collapse:collapse; margin-top:6px}
+details.datatable td,details.datatable th{padding:5px 6px; border-top:1px solid var(--grid); text-align:left}
+details.datatable td:last-child,details.datatable th:last-child{text-align:right; font-variant-numeric:tabular-nums}
+
+/* video overlay */
+.overlay{position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.85);
+  display:flex; align-items:center; justify-content:center; flex-direction:column; padding:16px}
+.overlay .close{position:absolute; top:calc(14px + env(safe-area-inset-top)); right:16px;
+  border:0; background:rgba(255,255,255,.15); color:#fff; width:38px; height:38px; border-radius:999px; font-size:17px; cursor:pointer}
+.overlay video, .overlay iframe{width:100%; max-width:560px; aspect-ratio:16/9; border:0; border-radius:12px; background:#000}
+.overlay .ytlink{color:#9ec5f4; margin-top:12px; font-size:14px}
+
+.note-inline{white-space:pre-wrap; color:var(--ink-2); font-size:15px}
+a.plain{color:var(--accent); text-decoration:none; font-weight:600}
+.toast{position:fixed; left:50%; bottom:calc(84px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  background:var(--ink); color:var(--page); padding:10px 18px; border-radius:999px; font-size:14px; font-weight:650;
+  z-index:60; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header class="appbar" id="appbar"></header>
+<main id="main"></main>
+<nav class="tabs" id="tabs">
+  <a href="#home" data-tab="home"><span class="ico">🏠</span>Home</a>
+  <a href="#progress" data-tab="progress"><span class="ico">📈</span>Progress</a>
+  <a href="#settings" data-tab="settings"><span class="ico">🏋️</span>Exercises</a>
+</nav>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* ================= IndexedDB ================= */
+const DB_NAME='shoulder-trainer', DB_VER=1;
+let db=null;
+function openDB(){
+  return new Promise((res,rej)=>{
+    const rq=indexedDB.open(DB_NAME,DB_VER);
+    rq.onupgradeneeded=e=>{
+      const d=e.target.result;
+      if(!d.objectStoreNames.contains('kv')) d.createObjectStore('kv',{keyPath:'key'});
+      if(!d.objectStoreNames.contains('entries')) d.createObjectStore('entries',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('videos')) d.createObjectStore('videos',{keyPath:'id'});
+    };
+    rq.onsuccess=()=>res(rq.result);
+    rq.onerror=()=>rej(rq.error);
+  });
+}
+function tx(store,mode,fn){
+  return new Promise((res,rej)=>{
+    const t=db.transaction(store,mode), s=t.objectStore(store);
+    let out; const r=fn(s); if(r&&'onsuccess'in r){ r.onsuccess=()=>out=r.result; }
+    t.oncomplete=()=>res(out); t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error);
+  });
+}
+const kvGet =k=>tx('kv','readonly',s=>s.get(k)).then(r=>r?r.value:undefined);
+const kvSet =(k,v)=>tx('kv','readwrite',s=>s.put({key:k,value:v}));
+const entryPut=e=>tx('entries','readwrite',s=>s.put(e));
+const entryDel=id=>tx('entries','readwrite',s=>s.delete(id));
+const entryAll=()=>tx('entries','readonly',s=>s.getAll());
+const videoPut=(id,blob)=>tx('videos','readwrite',s=>s.put({id,blob}));
+const videoGet=id=>tx('videos','readonly',s=>s.get(id)).then(r=>r?r.blob:null);
+const videoDel=id=>tx('videos','readwrite',s=>s.delete(id));
+
+/* ================= state & seed ================= */
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+let S={templates:null, entries:[]};
+
+function seedTemplates(){
+  const ex=(name,cue,kind,value,sets,reps,mode,youtube)=>({id:uid(),name,cue:cue||'',load:{kind,value},sets,reps,mode:mode||'reps',youtube:youtube||'',videoId:null});
+  return {
+    A:{key:'A',name:'Session A',exercises:[
+      ex('Wall Slides','Band looped around wrists, walk/slide up the wall','bandColor','red',3,10),
+      ex('Watson Shrug','Elbow next to body, pull to back of skull','bandColor','blue',3,20),
+      ex('Lateral Raise 90/90','Dumbbell raise','kg',5,3,15,'reps','https://youtu.be/DSSjBbE4WNU'),
+    ]},
+    B:{key:'B',name:'Session B',exercises:[
+      ex('Internal Rotation wiper 90F','Arm up in front, internal rotation','bandKg',20,3,10),
+      ex('External Rotation wiper 90F','Arm up in front, external rotation','bandKg',10,3,10),
+      ex('Bent Over Row (DB)','','kg',7.5,3,10),
+      ex('Floor Press (chest)','','kg',7.5,3,12),
+      ex('Standing Cable Row','','bandKg',50,3,20),
+      ex('Military Shoulder Press','Standing','kg',7.5,3,10),
+    ]},
+    C:{key:'C',name:'Session C',exercises:[
+      ex('Pallof Press (core)','','bandKg',20,3,20),
+      ex('Dead Bug','','none',null,3,20),
+      ex('Hip Flexor Stretch','Per side','none',null,3,10,'secs'),
+    ]},
+  };
+}
+async function loadState(){
+  let t=await kvGet('templates');
+  if(!t){ t=seedTemplates(); await kvSet('templates',t); }
+  // migration guard: ensure fields exist
+  for(const k of ['A','B','C']) if(t[k]) t[k].exercises.forEach(e=>{ if(!e.mode)e.mode='reps'; if(!('videoId'in e))e.videoId=null; });
+  S.templates=t;
+  S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
+}
+const saveTemplates=()=>kvSet('templates',S.templates);
+async function saveEntry(e){ await entryPut(e);
+  S.entries=S.entries.filter(x=>x.id!==e.id).concat([e]).sort((a,b)=>(b.date.localeCompare(a.date))||(b.createdAt-a.createdAt)); }
+async function deleteEntry(id){
+  const e=S.entries.find(x=>x.id===id);
+  if(e&&e.exercises) for(const x of e.exercises) if(x.videoId&&x.videoOwned) await videoDel(x.videoId).catch(()=>{});
+  await entryDel(id); S.entries=S.entries.filter(x=>x.id!==id);
+}
+
+/* ================= helpers ================= */
+const $=sel=>document.querySelector(sel);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const todayStr=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+function fmtDate(iso){
+  const [y,m,d]=iso.split('-').map(Number);
+  const dt=new Date(y,m-1,d);
+  const today=todayStr();
+  if(iso===today) return 'Today';
+  const yd=new Date(); yd.setDate(yd.getDate()-1);
+  if(dt.getFullYear()===yd.getFullYear()&&dt.getMonth()===yd.getMonth()&&dt.getDate()===yd.getDate()) return 'Yesterday';
+  return dt.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short',year:(dt.getFullYear()===new Date().getFullYear()?undefined:'numeric')});
+}
+function fmtLoad(load){
+  if(!load||load.kind==='none') return 'bodyweight';
+  if(load.kind==='kg') return load.value+' kg';
+  if(load.kind==='bandKg') return load.value+' kg band';
+  if(load.kind==='bandColor') return load.value+' band';
+  return '';
+}
+function fmtVol(x){ return x.sets+' × '+x.reps+(x.mode==='secs'?' s':''); }
+function weekCount(){
+  const now=new Date(); const day=(now.getDay()+6)%7; // Mon=0
+  const mon=new Date(now); mon.setDate(now.getDate()-day); mon.setHours(0,0,0,0);
+  const monISO=mon.getFullYear()+'-'+String(mon.getMonth()+1).padStart(2,'0')+'-'+String(mon.getDate()).padStart(2,'0');
+  return S.entries.filter(e=>e.type==='workout'&&e.date>=monISO).length;
+}
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),1800); }
+function ytId(url){
+  if(!url) return null;
+  const m=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?[^#]*v=|shorts\/|embed\/))([A-Za-z0-9_-]{6,20})/);
+  return m?m[1]:null;
+}
+
+/* ================= video overlay ================= */
+let overlayEl=null;
+async function openVideo(ex){
+  closeOverlay();
+  const ov=document.createElement('div'); ov.className='overlay'; overlayEl=ov;
+  const close=document.createElement('button'); close.className='close'; close.textContent='✕';
+  close.onclick=closeOverlay; ov.appendChild(close);
+  ov.addEventListener('click',e=>{ if(e.target===ov) closeOverlay(); });
+  if(ex.videoId){
+    const blob=await videoGet(ex.videoId);
+    if(blob){ const v=document.createElement('video'); v.controls=true; v.playsInline=true; v.src=URL.createObjectURL(blob); ov._url=v.src; ov.appendChild(v); }
+    else{ const p=document.createElement('p'); p.style.color='#fff'; p.textContent='Video not found on this device.'; ov.appendChild(p); }
+  } else if(ytId(ex.youtube)){
+    const id=ytId(ex.youtube);
+    const f=document.createElement('iframe');
+    f.src='https://www.youtube-nocookie.com/embed/'+id+'?playsinline=1';
+    f.allow='autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.allowFullscreen=true; ov.appendChild(f);
+    const a=document.createElement('a'); a.className='ytlink'; a.href=ex.youtube; a.target='_blank'; a.rel='noopener';
+    a.textContent='Open in YouTube ↗'; ov.appendChild(a);
+  }
+  document.body.appendChild(ov);
+}
+function closeOverlay(){ if(overlayEl){ if(overlayEl._url) URL.revokeObjectURL(overlayEl._url); overlayEl.remove(); overlayEl=null; } }
+
+/* ================= router ================= */
+function nav(hash){ location.hash=hash; }
+window.addEventListener('hashchange',render);
+function setBar(title, backHash){
+  const bar=$('#appbar'); bar.innerHTML='';
+  if(backHash!=null){ const b=document.createElement('button'); b.className='backbtn'; b.textContent='‹ Back';
+    b.onclick=()=>nav(backHash); bar.appendChild(b); }
+  const h=document.createElement('h1'); h.textContent=title; bar.appendChild(h);
+}
+function setTab(name){
+  document.querySelectorAll('nav.tabs a').forEach(a=>a.classList.toggle('active',a.dataset.tab===name));
+}
+function render(){
+  closeOverlay();
+  const h=location.hash.replace(/^#/,'')||'home';
+  const parts=h.split('/');
+  const M=$('#main'); M.innerHTML=''; window.scrollTo(0,0);
+  try{
+    if(parts[0]==='home') return viewHome(M);
+    if(parts[0]==='capture'&&!parts[1]) return viewPick(M);
+    if(parts[0]==='capture') return viewCapture(M,parts[1],null);
+    if(parts[0]==='physio') return viewSimple(M,'physio',parts[1]||null);
+    if(parts[0]==='injury') return viewSimple(M,'injury',parts[1]||null);
+    if(parts[0]==='entry') return viewDetail(M,parts[1]);
+    if(parts[0]==='editworkout') return viewCapture(M,null,parts[1]);
+    if(parts[0]==='settings') return viewSettings(M);
+    if(parts[0]==='exercise') return viewExercise(M,parts[1],parts[2]);
+    if(parts[0]==='progress') return viewProgress(M,parts.slice(1).join('/'));
+    viewHome(M);
+  }catch(err){ M.innerHTML='<p class="empty">Something went wrong: '+esc(err.message)+'</p>'; console.error(err); }
+}
+
+/* ================= views ================= */
+function viewHome(M){
+  setBar('Shoulder Trainer'); setTab('home');
+  const wc=weekCount();
+  M.innerHTML=`
+    <button class="btn" id="bCap">➕&nbsp; Capture Workout</button>
+    <div class="btnrow">
+      <button class="btn physio" id="bPhy">🩺&nbsp; Physio</button>
+      <button class="btn injury" id="bInj">⚠️&nbsp; Injury Break</button>
+    </div>
+    <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
+    <div id="feed"></div>`;
+  $('#bCap').onclick=()=>nav('capture');
+  $('#bPhy').onclick=()=>nav('physio');
+  $('#bInj').onclick=()=>nav('injury');
+  const feed=$('#feed');
+  if(!S.entries.length){ feed.innerHTML='<p class="empty">Nothing here yet.<br>Capture your first workout above 💪</p>'; return; }
+  for(const e of S.entries){
+    const c=document.createElement('div'); c.className='card tappable';
+    let badge,sub;
+    if(e.type==='workout'){
+      badge=`<span class="badge ${e.session}">${e.session}</span>`;
+      const done=e.exercises.filter(x=>!x.skipped).length, skip=e.exercises.length-done;
+      sub=done+' exercise'+(done!==1?'s':'')+(skip?', '+skip+' skipped':'')+(e.note?' · 📝':'');
+    } else if(e.type==='physio'){
+      badge='<span class="badge physio">🩺</span>';
+      sub='Physio · '+(e.comments?e.comments.split('\n')[0].slice(0,60):'appointment');
+    } else {
+      badge='<span class="badge injury">⚠️</span>';
+      sub='Injury break'+(e.comments?' · '+e.comments.split('\n')[0].slice(0,50):'');
+    }
+    c.innerHTML=`<div class="cardhead">${badge}<span class="date">${esc(fmtDate(e.date))}</span><span class="spacer"></span><span class="chev">›</span></div><div class="cardsub">${esc(sub).replace('📝','📝')}</div>`;
+    c.onclick=()=>nav('entry/'+e.id);
+    feed.appendChild(c);
+  }
+}
+
+function viewPick(M){
+  setBar('Capture Workout','home'); setTab('home');
+  for(const k of ['A','B','C']){
+    const t=S.templates[k];
+    const b=document.createElement('button'); b.className='pickbtn';
+    b.innerHTML=`<span class="badge ${k}">${k}</span><span><span class="pickname">${esc(t.name)}</span><br><span class="picksub">${t.exercises.length} exercises · ${esc(t.exercises.map(e=>e.name.split(' ')[0]).slice(0,3).join(', '))}${t.exercises.length>3?'…':''}</span></span>`;
+    b.onclick=()=>nav('capture/'+k);
+    M.appendChild(b);
+  }
+}
+
+/* Capture new (sessionKey set) or edit existing workout (editId set) */
+function viewCapture(M,sessionKey,editId){
+  setTab('home');
+  let entry, isEdit=false;
+  if(editId){
+    const src=S.entries.find(x=>x.id===editId);
+    if(!src){ M.innerHTML='<p class="empty">Entry not found.</p>'; setBar('Edit','home'); return; }
+    entry=JSON.parse(JSON.stringify(src)); isEdit=true; sessionKey=entry.session;
+    setBar('Edit Workout','entry/'+editId);
+  } else {
+    const t=S.templates[sessionKey];
+    if(!t){ nav('capture'); return; }
+    entry={
+      id:uid(), type:'workout', session:sessionKey, date:todayStr(), createdAt:Date.now(), note:'',
+      exercises:t.exercises.map(e=>({
+        name:e.name, cue:e.cue, load:JSON.parse(JSON.stringify(e.load)),
+        sets:e.sets, reps:e.reps, mode:e.mode, skipped:false,
+        youtube:e.youtube||'', videoId:e.videoId||null, videoOwned:false
+      }))
+    };
+    setBar('Session '+sessionKey,'capture');
+  }
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${entry.date}" max="${todayStr()}"></div><div id="exlist"></div>
+    <div class="field"><label>Note (optional)</label><textarea id="fNote" placeholder="e.g. shoulder felt tight">${esc(entry.note)}</textarea></div>
+    <button class="btn" id="bSave">${isEdit?'Save Changes':'Save Workout'}</button>`;
+  M.appendChild(wrap);
+  const list=$('#exlist');
+  entry.exercises.forEach((x)=>{
+    const row=document.createElement('div'); row.className='exrow'+(x.skipped?' skipped':'');
+    const hasVid=x.videoId||ytId(x.youtube);
+    row.innerHTML=`<div class="extitle">
+        <span class="exname">${esc(x.name)}</span>
+        ${hasVid?'<button class="videobtn" title="Watch video">▶</button>':''}
+        <button class="skipbtn ${x.skipped?'on':''}">${x.skipped?'Skipped':'Skip'}</button>
+      </div>
+      ${x.cue?'<div class="cue">'+esc(x.cue)+'</div>':''}
+      <div class="exbody"><div class="controls"></div></div>`;
+    if(hasVid) row.querySelector('.videobtn').onclick=()=>openVideo(x);
+    const skipB=row.querySelector('.skipbtn');
+    skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
+      skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip'; };
+    const ctls=row.querySelector('.controls');
+    // load control
+    if(x.load.kind==='kg'||x.load.kind==='bandKg'){
+      ctls.appendChild(stepCtl(x.load.kind==='kg'?'Weight (kg)':'Band (kg)', x.load.value, x.load.kind==='kg'?0.5:1, v=>x.load.value=v));
+    } else if(x.load.kind==='bandColor'){
+      const c=document.createElement('div'); c.className='ctl';
+      c.innerHTML=`<label>Band</label><input type="text" value="${esc(x.load.value)}">`;
+      c.querySelector('input').oninput=e=>x.load.value=e.target.value; ctls.appendChild(c);
+    }
+    ctls.appendChild(stepCtl('Sets', x.sets, 1, v=>x.sets=v));
+    ctls.appendChild(stepCtl(x.mode==='secs'?'Hold (s)':'Reps', x.reps, 1, v=>x.reps=v));
+    list.appendChild(row);
+  });
+  $('#bSave').onclick=async()=>{
+    entry.date=$('#fDate').value||todayStr();
+    entry.note=$('#fNote').value.trim();
+    await saveEntry(entry);
+    toast(isEdit?'Workout updated':'Workout saved 💪');
+    nav(isEdit?('entry/'+entry.id):'home');
+  };
+}
+function stepCtl(label,value,step,onChange){
+  const d=document.createElement('div'); d.className='ctl';
+  d.innerHTML=`<label>${esc(label)}</label><div class="stepper">
+    <button type="button">−</button><input type="text" inputmode="decimal" value="${value==null?'':value}"><button type="button">+</button></div>`;
+  const [minus,plus]=d.querySelectorAll('button'); const inp=d.querySelector('input');
+  const set=v=>{ v=Math.round(v*100)/100; if(v<0)v=0; inp.value=v; onChange(v); };
+  minus.onclick=()=>set((parseFloat(inp.value)||0)-step);
+  plus.onclick=()=>set((parseFloat(inp.value)||0)+step);
+  inp.oninput=()=>{ const v=parseFloat(inp.value.replace(',','.')); if(!isNaN(v)) onChange(v); };
+  inp.onblur=()=>{ const v=parseFloat(inp.value.replace(',','.')); set(isNaN(v)?0:v); };
+  return d;
+}
+
+/* physio & injury forms (new or edit) */
+function viewSimple(M,type,editId){
+  setTab('home');
+  const isPhysio=type==='physio';
+  let entry, isEdit=false;
+  if(editId){
+    const src=S.entries.find(x=>x.id===editId);
+    if(!src){ M.innerHTML='<p class="empty">Entry not found.</p>'; setBar('Edit','home'); return; }
+    entry=JSON.parse(JSON.stringify(src)); isEdit=true;
+    setBar(isPhysio?'Edit Physio':'Edit Injury Break','entry/'+editId);
+  } else {
+    entry={id:uid(), type, date:todayStr(), createdAt:Date.now(), comments:''};
+    setBar(isPhysio?'Physio Appointment':'Injury Break','home');
+  }
+  M.innerHTML=`
+    <div class="field"><label>Date</label><input type="date" id="fDate" value="${entry.date}"></div>
+    <div class="field"><label>${isPhysio?'Comments':'What happened / how long?'}</label>
+      <textarea id="fCom" placeholder="${isPhysio?'What was discussed, changes to the plan…':'e.g. shoulder flared up, pausing for a week'}">${esc(entry.comments)}</textarea></div>
+    <button class="btn ${isPhysio?'physio':'injury'}" id="bSave">${isEdit?'Save Changes':'Save'}</button>`;
+  $('#bSave').onclick=async()=>{
+    entry.date=$('#fDate').value||todayStr();
+    entry.comments=$('#fCom').value.trim();
+    await saveEntry(entry);
+    toast('Saved');
+    nav(isEdit?('entry/'+entry.id):'home');
+  };
+}
+
+function viewDetail(M,id){
+  setTab('home');
+  const e=S.entries.find(x=>x.id===id);
+  if(!e){ setBar('Entry','home'); M.innerHTML='<p class="empty">Entry not found.</p>'; return; }
+  if(e.type==='workout'){
+    setBar('Session '+e.session+' · '+fmtDate(e.date),'home');
+    const rows=e.exercises.map(x=>{
+      const hasVid=x.videoId||ytId(x.youtube);
+      return `<tr><td>${esc(x.name)}${hasVid?' <button class="videobtn" data-v="'+esc(x.name)+'" style="width:26px;height:26px;font-size:12px">▶</button>':''}${x.skipped?'<br><span class="skiptag">SKIPPED</span>':''}</td>
+        <td class="num">${x.skipped?'—':esc(fmtLoad(x.load))+'<br>'+esc(fmtVol(x))}</td></tr>`;
+    }).join('');
+    M.innerHTML=`<div class="card"><table class="dtl">${rows}</table></div>
+      ${e.note?'<div class="card"><div class="cue" style="margin:0 0 4px">Note</div><div class="note-inline">'+esc(e.note)+'</div></div>':''}
+      <div class="btnrow"><button class="btn secondary" id="bEdit">Edit</button><button class="btn danger" id="bDel">Delete</button></div>`;
+    M.querySelectorAll('.videobtn').forEach(b=>{
+      b.onclick=()=>{ const x=e.exercises.find(v=>v.name===b.dataset.v); if(x) openVideo(x); };
+    });
+    $('#bEdit').onclick=()=>nav('editworkout/'+e.id);
+  } else {
+    const isPhysio=e.type==='physio';
+    setBar((isPhysio?'Physio · ':'Injury Break · ')+fmtDate(e.date),'home');
+    M.innerHTML=`<div class="card"><div class="note-inline">${esc(e.comments||'(no comments)')}</div></div>
+      <div class="btnrow"><button class="btn secondary" id="bEdit">Edit</button><button class="btn danger" id="bDel">Delete</button></div>`;
+    $('#bEdit').onclick=()=>nav((isPhysio?'physio/':'injury/')+e.id);
+  }
+  $('#bDel').onclick=async()=>{
+    if(!confirm('Delete this entry? This cannot be undone.')) return;
+    await deleteEntry(id); toast('Deleted'); nav('home');
+  };
+}
+
+/* ============ settings: sessions & exercises ============ */
+function viewSettings(M){
+  setBar('Exercises'); setTab('settings');
+  for(const k of ['A','B','C']){
+    const t=S.templates[k];
+    const sec=document.createElement('div');
+    sec.innerHTML=`<div class="sectionlabel"><span class="badge ${k}" style="min-width:22px;height:22px;font-size:12px;vertical-align:middle">${k}</span> ${esc(t.name)}</div>`;
+    const card=document.createElement('div'); card.className='card';
+    t.exercises.forEach((ex,i)=>{
+      const row=document.createElement('div'); row.className='setrow';
+      row.innerHTML=`<div class="setname"><div class="n">${esc(ex.name)}</div>
+        <div class="s">${esc(fmtLoad(ex.load))} · ${esc(fmtVol(ex))}${(ex.videoId||ytId(ex.youtube))?' · 🎬':''}</div></div>
+        <button class="iconbtn up" ${i===0?'disabled':''}>↑</button>
+        <button class="iconbtn down" ${i===t.exercises.length-1?'disabled':''}>↓</button>
+        <button class="iconbtn edit">✎</button>`;
+      row.querySelector('.up').onclick=async()=>{ t.exercises.splice(i-1,0,t.exercises.splice(i,1)[0]); await saveTemplates(); render(); };
+      row.querySelector('.down').onclick=async()=>{ t.exercises.splice(i+1,0,t.exercises.splice(i,1)[0]); await saveTemplates(); render(); };
+      row.querySelector('.edit').onclick=()=>nav('exercise/'+k+'/'+ex.id);
+      card.appendChild(row);
+    });
+    const add=document.createElement('button'); add.className='btn secondary'; add.style.marginTop='8px';
+    add.textContent='+ Add exercise'; add.onclick=()=>nav('exercise/'+k+'/new');
+    sec.appendChild(card); sec.appendChild(add); M.appendChild(sec);
+  }
+  const bk=document.createElement('div');
+  bk.innerHTML=`<div class="sectionlabel">Backup</div>
+    <div class="btnrow"><button class="btn secondary" id="bExp">Export data</button><button class="btn secondary" id="bImp">Import</button></div>
+    <p class="cue" style="margin:4px 2px 24px">Your data lives only on this phone. Export regularly as a backup (videos are not included in exports).</p>
+    <input type="file" id="fImp" accept="application/json,.json" class="hidden">`;
+  M.appendChild(bk);
+  $('#bExp').onclick=exportData;
+  $('#bImp').onclick=()=>$('#fImp').click();
+  $('#fImp').onchange=importData;
+}
+
+function viewExercise(M,sess,exId){
+  setTab('settings');
+  const t=S.templates[sess];
+  if(!t){ nav('settings'); return; }
+  const isNew=exId==='new';
+  const ex=isNew?{id:uid(),name:'',cue:'',load:{kind:'kg',value:5},sets:3,reps:10,mode:'reps',youtube:'',videoId:null}
+               :t.exercises.find(x=>x.id===exId);
+  if(!ex){ nav('settings'); return; }
+  const w=JSON.parse(JSON.stringify(ex)); // work on a copy
+  let newVideoBlob=null, removeVideo=false;
+  setBar((isNew?'New exercise':'Edit exercise')+' · '+sess,'settings');
+  M.innerHTML=`
+    <div class="field"><label>Name</label><input type="text" id="fName" value="${esc(w.name)}" placeholder="Exercise name"></div>
+    <div class="field"><label>Cue / description (optional)</label><input type="text" id="fCue" value="${esc(w.cue)}" placeholder="e.g. elbow next to body"></div>
+    <div class="field"><label>Load type</label><select id="fKind">
+      <option value="kg">Dumbbell / weight (kg)</option>
+      <option value="bandKg">Band (kg)</option>
+      <option value="bandColor">Band (color)</option>
+      <option value="none">Bodyweight / none</option></select></div>
+    <div class="field" id="loadField"></div>
+    <div class="controls" style="margin-bottom:14px" id="volCtl"></div>
+    <div class="field"><label>Count type</label><select id="fMode">
+      <option value="reps">Reps</option><option value="secs">Hold (seconds)</option></select></div>
+    <div class="field"><label>YouTube link (optional)</label><input type="url" id="fYt" value="${esc(w.youtube)}" placeholder="https://youtu.be/…"></div>
+    <div class="field"><label>Video from this phone (optional)</label>
+      <div class="btnrow" style="margin:0">
+        <button class="btn secondary small" id="bVid">🎬 ${w.videoId?'Replace video':'Add video'}</button>
+        <button class="btn secondary small ${w.videoId?'':'hidden'}" id="bVidPlay">▶ Play</button>
+        <button class="btn secondary small ${w.videoId?'':'hidden'}" id="bVidDel" style="color:var(--danger)">Remove</button>
+      </div>
+      <input type="file" id="fVid" accept="video/*" class="hidden"></div>
+    <button class="btn" id="bSave">${isNew?'Add Exercise':'Save Exercise'}</button>
+    ${isNew?'':'<button class="btn danger" id="bDel" style="margin-top:10px">Delete Exercise</button>'}`;
+  $('#fKind').value=w.load.kind; $('#fMode').value=w.mode;
+  function renderLoadField(){
+    const lf=$('#loadField'); const kind=$('#fKind').value;
+    if(kind==='none'){ lf.innerHTML=''; w.load={kind:'none',value:null}; return; }
+    if(kind==='bandColor'){
+      lf.innerHTML=`<label>Band color</label><input type="text" id="fLoad" value="${esc(w.load.kind==='bandColor'?w.load.value:'')}" placeholder="e.g. red">`;
+      $('#fLoad').oninput=e=>{ w.load={kind:'bandColor',value:e.target.value}; };
+      w.load={kind:'bandColor',value:w.load.kind==='bandColor'?w.load.value:''};
+    } else {
+      const cur=(typeof w.load.value==='number')?w.load.value:5;
+      lf.innerHTML='<label>'+(kind==='kg'?'Default weight (kg)':'Band strength (kg)')+'</label>';
+      w.load={kind,value:cur};
+      lf.appendChild(stepCtl('',cur,kind==='kg'?0.5:1,v=>w.load.value=v));
+      lf.querySelector('.ctl label').remove();
+    }
+  }
+  function renderVol(){
+    const vc=$('#volCtl'); vc.innerHTML='';
+    vc.appendChild(stepCtl('Default sets',w.sets,1,v=>w.sets=v));
+    vc.appendChild(stepCtl(w.mode==='secs'?'Default hold (s)':'Default reps',w.reps,1,v=>w.reps=v));
+  }
+  renderLoadField(); renderVol();
+  $('#fKind').onchange=renderLoadField;
+  $('#fMode').onchange=e=>{ w.mode=e.target.value; renderVol(); };
+  $('#bVid').onclick=()=>$('#fVid').click();
+  $('#fVid').onchange=e=>{
+    const f=e.target.files[0]; if(!f) return;
+    newVideoBlob=f; removeVideo=false;
+    $('#bVid').textContent='🎬 Video selected ✓';
+    $('#bVidDel').classList.remove('hidden');
+  };
+  if(w.videoId) $('#bVidPlay').onclick=()=>openVideo(w);
+  $('#bVidDel').onclick=()=>{ removeVideo=true; newVideoBlob=null;
+    $('#bVid').textContent='🎬 Add video'; $('#bVidPlay').classList.add('hidden'); $('#bVidDel').classList.add('hidden'); };
+  $('#bSave').onclick=async()=>{
+    w.name=$('#fName').value.trim();
+    if(!w.name){ alert('Please give the exercise a name.'); return; }
+    w.cue=$('#fCue').value.trim(); w.youtube=$('#fYt').value.trim();
+    if(w.youtube&&!ytId(w.youtube)){ alert('That YouTube link doesn’t look right — please paste a normal YouTube video URL.'); return; }
+    if(removeVideo&&w.videoId){ await videoDel(w.videoId).catch(()=>{}); w.videoId=null; }
+    if(newVideoBlob){
+      if(w.videoId) await videoDel(w.videoId).catch(()=>{});
+      w.videoId='v_'+uid();
+      try{ await videoPut(w.videoId,newVideoBlob); }
+      catch(err){ alert('Could not store the video (possibly too large). Everything else was saved.'); w.videoId=null; }
+    }
+    if(isNew) t.exercises.push(w);
+    else { const i=t.exercises.findIndex(x=>x.id===w.id); t.exercises[i]=w; }
+    await saveTemplates(); toast('Saved'); nav('settings');
+  };
+  const bDel=$('#bDel');
+  if(bDel) bDel.onclick=async()=>{
+    if(!confirm('Remove "'+w.name+'" from '+t.name+'? Past workouts keep their history.')) return;
+    if(w.videoId) await videoDel(w.videoId).catch(()=>{});
+    t.exercises=t.exercises.filter(x=>x.id!==w.id);
+    await saveTemplates(); toast('Removed'); nav('settings');
+  };
+}
+
+/* ============ progress chart ============ */
+function progressSeries(){
+  // exercise name -> [{date, value}] from non-skipped workout exercises with numeric load
+  const map=new Map();
+  const sorted=[...S.entries].filter(e=>e.type==='workout').sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
+  for(const e of sorted) for(const x of e.exercises){
+    if(x.skipped) continue;
+    if(!x.load||(x.load.kind!=='kg'&&x.load.kind!=='bandKg')) continue;
+    const v=parseFloat(x.load.value); if(isNaN(v)) continue;
+    if(!map.has(x.name)) map.set(x.name,[]);
+    map.get(x.name).push({date:e.date, value:v, kind:x.load.kind});
+  }
+  return map;
+}
+function viewProgress(M,selRaw){
+  setBar('Progress'); setTab('progress');
+  const series=progressSeries();
+  if(!series.size){
+    M.innerHTML='<p class="empty">Once you’ve captured workouts with weighted exercises, your weight progress per exercise shows up here.</p>';
+    return;
+  }
+  const names=[...series.keys()];
+  let sel=selRaw?decodeURIComponent(selRaw):names[0];
+  if(!series.has(sel)) sel=names[0];
+  const selWrap=document.createElement('div'); selWrap.className='field';
+  selWrap.innerHTML='<label>Exercise</label><select id="fSel">'+names.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('')+'</select>';
+  M.appendChild(selWrap);
+  $('#fSel').onchange=e=>{ location.replace('#progress/'+encodeURIComponent(e.target.value)); };
+  const pts=series.get(sel);
+  const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative';
+  const unit=pts[0].kind==='bandKg'?'kg band':'kg';
+  const latest=pts[pts.length-1].value, first=pts[0].value;
+  const delta=latest-first;
+  box.innerHTML=`<h3>${esc(sel)}</h3><div class="vsub">${pts.length} workout${pts.length>1?'s':''} · latest ${latest} ${unit}${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(Math.round(delta*100)/100)} kg since first`:''}</div>`;
+  box.appendChild(buildChart(pts,unit));
+  const dt=document.createElement('details'); dt.className='datatable';
+  dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(unit)+'</th></tr>'+
+    pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td><td>${p.value}</td></tr>`).reverse().join('')+'</table>';
+  box.appendChild(dt);
+  M.appendChild(box);
+}
+function buildChart(pts,unit){
+  const W=520,H=260,padL=40,padR=14,padT=14,padB=30;
+  const xs=pts.map((p,i)=>i), n=pts.length;
+  let vmin=Math.min(...pts.map(p=>p.value)), vmax=Math.max(...pts.map(p=>p.value));
+  if(vmin===vmax){ vmin=Math.max(0,vmin-1); vmax=vmax+1; }
+  const span=vmax-vmin; vmin=Math.max(0,vmin-span*0.15); vmax=vmax+span*0.15;
+  const X=i=> n===1 ? (padL+(W-padL-padR)/2) : padL+(W-padL-padR)*(i/(n-1));
+  const Y=v=> padT+(H-padT-padB)*(1-(v-vmin)/(vmax-vmin));
+  const svgNS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(svgNS,'svg');
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('role','img');
+  svg.setAttribute('aria-label','Weight over time');
+  const mk=(tag,attrs)=>{ const el=document.createElementNS(svgNS,tag); for(const k in attrs) el.setAttribute(k,attrs[k]); return el; };
+  // gridlines: 3 horizontal
+  const ticks=[vmin+(vmax-vmin)*0.1, (vmin+vmax)/2, vmax-(vmax-vmin)*0.1].map(v=>Math.round(v*2)/2);
+  for(const tv of [...new Set(ticks)]){
+    svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:Y(tv),y2:Y(tv),stroke:'var(--grid)','stroke-width':1}));
+    const t=mk('text',{x:padL-6,y:Y(tv)+4,'text-anchor':'end','font-size':11,fill:'var(--muted)','font-family':'inherit'});
+    t.textContent=tv; svg.appendChild(t);
+  }
+  // baseline
+  svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:H-padB,y2:H-padB,stroke:'var(--baseline)','stroke-width':1}));
+  // x labels: first & last date
+  const xl=mk('text',{x:X(0),y:H-10,'text-anchor':n===1?'middle':'start','font-size':11,fill:'var(--muted)','font-family':'inherit'});
+  xl.textContent=fmtDate(pts[0].date); svg.appendChild(xl);
+  if(n>1){ const xr=mk('text',{x:X(n-1),y:H-10,'text-anchor':'end','font-size':11,fill:'var(--muted)','font-family':'inherit'});
+    xr.textContent=fmtDate(pts[n-1].date); svg.appendChild(xr); }
+  // line
+  if(n>1){
+    const d=pts.map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.value)).join(' ');
+    svg.appendChild(mk('path',{d,fill:'none',stroke:'var(--chart)','stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
+  }
+  // markers (8px = r4) with surface ring
+  pts.forEach((p,i)=>{
+    svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.value),r:5,fill:'var(--surface)'}));
+    svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.value),r:4,fill:'var(--chart)'}));
+  });
+  // crosshair + tooltip layer
+  const cross=mk('line',{x1:0,x2:0,y1:padT,y2:H-padB,stroke:'var(--baseline)','stroke-width':1,opacity:0});
+  svg.appendChild(cross);
+  const tip=document.createElement('div'); tip.className='viz-tip';
+  const hit=mk('rect',{x:0,y:0,width:W,height:H,fill:'transparent'});
+  svg.appendChild(hit);
+  function showAt(clientX){
+    const r=svg.getBoundingClientRect();
+    const px=(clientX-r.left)/r.width*W;
+    let best=0,bd=1e9;
+    for(let i=0;i<n;i++){ const d=Math.abs(X(i)-px); if(d<bd){bd=d;best=i;} }
+    const p=pts[best];
+    cross.setAttribute('x1',X(best)); cross.setAttribute('x2',X(best)); cross.setAttribute('opacity',1);
+    tip.textContent=fmtDate(p.date)+' · '+p.value+' '+unit;
+    tip.style.left=(X(best)/W*r.width)+'px';
+    tip.style.top=(Y(p.value)/H*r.height)+'px';
+    tip.style.opacity=1;
+  }
+  function hide(){ cross.setAttribute('opacity',0); tip.style.opacity=0; }
+  hit.addEventListener('pointermove',e=>showAt(e.clientX));
+  hit.addEventListener('pointerdown',e=>showAt(e.clientX));
+  hit.addEventListener('pointerleave',hide);
+  const holder=document.createElement('div'); holder.style.position='relative';
+  holder.appendChild(svg); holder.appendChild(tip);
+  return holder;
+}
+
+/* ============ export / import ============ */
+async function exportData(){
+  const payload={app:'shoulder-trainer', version:1, exportedAt:new Date().toISOString(),
+    templates:S.templates, entries:S.entries};
+  const json=JSON.stringify(payload,null,1);
+  const name='shoulder-trainer-backup-'+todayStr()+'.json';
+  const file=new File([json],name,{type:'application/json'});
+  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file],title:'Shoulder Trainer backup'}); return; }catch(e){ if(e.name==='AbortError') return; }
+  }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([json],{type:'application/json'}));
+  a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+async function importData(ev){
+  const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
+  let data;
+  try{ data=JSON.parse(await f.text()); }catch(e){ alert('That file is not a valid backup.'); return; }
+  if(!data||data.app!=='shoulder-trainer'||!data.templates||!Array.isArray(data.entries)){ alert('That file is not a Shoulder Trainer backup.'); return; }
+  if(!confirm('Import backup from '+(data.exportedAt||'unknown date').slice(0,10)+'?\nThis REPLACES your exercises and all '+S.entries.length+' current entries with the '+data.entries.length+' entries in the backup.')) return;
+  await kvSet('templates',data.templates);
+  await tx('entries','readwrite',s=>{ s.clear(); for(const e of data.entries) s.put(e); });
+  await loadState(); toast('Backup imported'); nav('home'); render();
+}
+
+/* ================= boot ================= */
+(async function(){
+  try{
+    db=await openDB();
+    await loadState();
+  }catch(err){
+    $('#main').innerHTML='<p class="empty">Could not open local storage: '+esc(err.message)+'</p>';
+    return;
+  }
+  render();
+  if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>

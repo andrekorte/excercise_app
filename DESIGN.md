@@ -131,11 +131,15 @@ Everything above is editable in the app afterwards — nothing is hard-coded.
   clearing Safari website data would erase entries — hence the one-tap
   export/import backup.
 
-## Open questions
+## Decisions (confirmed 2026-07-27)
 
-1. **Session B set counts** — you wrote e.g. "7.5 kg × 10" without a set count;
-   I assumed 3 sets everywhere. Correct?
-2. **Pallof press** — which band (color or kg)?
-3. **Hip flexor stretch** — how long is the hold (e.g. 30 s per side)?
-4. Anything you'd want on the timeline besides the weekly count — e.g. a streak,
-   or a per-exercise weight-progress chart later?
+1. **Session B set counts** — 3 sets everywhere.
+2. **Pallof press** — 20 kg band.
+3. **Hip flexor stretch** — 10 s hold (time-based exercise).
+4. **Progress chart** — per-exercise weight-over-time line chart on its own
+   Progress tab (exercises with a numeric load: kg or band-kg).
+5. **Injury break** — third entry type with its own button on the home screen:
+   date + free-text comment, shown distinctly on the timeline.
+6. Skipping an exercise on a given day is done with the per-exercise **Skip**
+   toggle in the capture form; removing one permanently is done in the
+   Exercises tab.
