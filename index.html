@@ -264,7 +264,43 @@ async function loadState(){
   // migration guard: ensure fields exist
   for(const k of ['A','B','C']) if(t[k]) t[k].exercises.forEach(e=>{ if(!e.mode)e.mode='reps'; if(!('videoId'in e))e.videoId=null; });
   S.templates=t;
+  await seedHistory();
   S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
+}
+/* One-time import of the pre-app paper log (July 2026). Runs once per device,
+   guarded by a flag, so it never duplicates or touches entries captured later. */
+async function seedHistory(){
+  if(await kvGet('seedHistoryV1')) return;
+  const H=[
+    ['2026-07-01','B','4,5,8, 9, 6,7'],
+    ['2026-07-03','B','4,5,8, 9, 6,7'],
+    ['2026-07-05','A',''],
+    ['2026-07-07','B',''],
+    ['2026-07-09','B',''],
+    ['2026-07-11','A',''],
+    ['2026-07-13','B',''],
+    ['2026-07-15','B',''],
+    ['2026-07-17','A',''],
+    ['2026-07-19','B',''],
+    ['2026-07-20','INJURY','Shoulder pain kicked in'],
+    ['2026-07-21','INJURY','Break - shoulder pain (easing)'],
+    ['2026-07-25','B',''],
+    ['2026-07-27','A',''],
+  ];
+  for(const [date,kind,text] of H){
+    const createdAt=new Date(date+'T12:00:00').getTime();
+    if(kind==='INJURY'){
+      await entryPut({id:uid(), type:'injury', date, createdAt, comments:text});
+    } else {
+      const t=S.templates[kind];
+      if(!t) continue;
+      await entryPut({id:uid(), type:'workout', session:kind, date, createdAt, note:text,
+        exercises:t.exercises.map(e=>({name:e.name, cue:e.cue, load:JSON.parse(JSON.stringify(e.load)),
+          sets:e.sets, reps:e.reps, mode:e.mode, skipped:false,
+          youtube:e.youtube||'', videoId:e.videoId||null, videoOwned:false}))});
+    }
+  }
+  await kvSet('seedHistoryV1',true);
 }
 const saveTemplates=()=>kvSet('templates',S.templates);
 async function saveEntry(e){ await entryPut(e);
