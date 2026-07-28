@@ -23,6 +23,7 @@
   --tint-b-bg:#fcebe2; --tint-b-ink:#b4441c;
   --tint-c-bg:#e2f4ec; --tint-c-ink:#0d7a52;
   --tint-i-bg:#fbe7e6; --tint-i-ink:#a53730;
+  --tint-f-bg:#eceafa; --tint-f-ink:#4a3aa7;
   --warn-bg:#fdf3da;
   --shadow:0 1px 2px rgba(20,20,18,.05);
 }
@@ -35,6 +36,7 @@
     --tint-b-bg:#392015; --tint-b-ink:#eb9a72;
     --tint-c-bg:#132f26; --tint-c-ink:#57c9a0;
     --tint-i-bg:#3a1c1b; --tint-i-ink:#e5837c;
+    --tint-f-bg:#262043; --tint-f-ink:#aaa2ee;
     --warn-bg:#33290f;
     --shadow:none;
   }
@@ -76,6 +78,8 @@ main{padding:16px; max-width:560px; margin:0 auto}
 .btn.small{width:auto; padding:8px 14px; font-size:14px; border-radius:10px; font-weight:600}
 .btnrow{display:flex; gap:10px; margin:12px 0}
 .btnrow .btn{flex:1}
+.chip{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px; flex:none}
+.chip.fb{background:var(--tint-f-bg); color:var(--tint-f-ink)}
 
 /* cards */
 .card{
@@ -100,6 +104,7 @@ main{padding:16px; max-width:560px; margin:0 auto}
 .badge.D1{background:var(--tint-a-bg); color:var(--tint-a-ink)}
 .badge.D2{background:var(--tint-b-bg); color:var(--tint-b-ink)}
 .badge.MIX{background:var(--tint-c-bg); color:var(--tint-c-ink)}
+.badge.FB{background:var(--tint-f-bg); color:var(--tint-f-ink)}
 
 .weekline{color:var(--muted); font-size:13px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; margin:16px 2px 10px}
 .sectionlabel{font-size:12px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin:20px 2px 8px; display:flex; align-items:center; gap:7px}
@@ -169,6 +174,7 @@ table.dtl td.num{text-align:right; white-space:nowrap; font-variant-numeric:tabu
 .wchip.D1{background:var(--tint-a-bg); color:var(--tint-a-ink)}
 .wchip.D2{background:var(--tint-b-bg); color:var(--tint-b-ink)}
 .wchip.MIX{background:var(--tint-c-bg); color:var(--tint-c-ink)}
+.wchip.FB{background:var(--tint-f-bg); color:var(--tint-f-ink)}
 .wpr{display:inline-flex; align-items:center; gap:4px; color:var(--warn); font-size:12.5px; font-weight:700; margin-left:2px}
 
 /* tab bar */
@@ -279,8 +285,10 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 let S={t:null, entries:[]};
 
 function seedTemplates(){
-  const ex=(name,d1,d2,hasWeight)=>({id:uid(),name,cue:'',hasWeight:hasWeight!==false,
+  const ex=(name,d1,d2,hasWeight)=>({id:uid(),name,cue:'',hasWeight:hasWeight!==false,activity:false,minutes:null,
     weight:null,sets:3,reps:12,d1,d2,youtube:'',videoId:null});
+  const act=name=>({id:uid(),name,cue:'',hasWeight:false,activity:true,minutes:null,
+    weight:null,sets:3,reps:12,d1:false,d2:false,youtube:'',videoId:null});
   return { exercises:[
     ex('Shoulder',              true,  false),
     ex('Leg Extension',         true,  false),
@@ -296,12 +304,30 @@ function seedTemplates(){
     ex('Chest Press',           true,  false),
     ex('Core Sit Ups',          true,  true, false),
     ex('Core Machine',          true,  true),
+    act('Football Game'),
+    act('Football Training'),
+    act('Bike Ride'),
   ]};
 }
 async function loadState(){
   let t=await kvGet('templates');
   if(!t){ t=seedTemplates(); await kvSet('templates',t); }
+  // migrations for devices that installed before activities existed
+  let changed=false;
+  t.exercises.forEach(e=>{ if(e.activity==null){ e.activity=false; changed=true; } if(!('minutes'in e)){ e.minutes=null; changed=true; } });
+  if(!(await kvGet('seedActV1'))){
+    const have=t.exercises.map(e=>e.name.toLowerCase());
+    for(const n of ['Football Game','Football Training','Bike Ride']){
+      if(!have.includes(n.toLowerCase())){
+        t.exercises.push({id:uid(),name:n,cue:'',hasWeight:false,activity:true,minutes:null,
+          weight:null,sets:3,reps:12,d1:false,d2:false,youtube:'',videoId:null});
+        changed=true;
+      }
+    }
+    await kvSet('seedActV1',true);
+  }
   S.t=t;
+  if(changed) await kvSet('templates',t);
   S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
 }
 const saveTemplates=()=>kvSet('templates',S.t);
@@ -315,9 +341,19 @@ const entryFor=date=>S.entries.find(e=>e.date===date);
 
 /* snapshot row from a template exercise */
 function rowFrom(e,partOfPlan){
-  return {name:e.name, cue:e.cue, hasWeight:e.hasWeight, weight:e.weight,
-    sets:e.sets, reps:e.reps, skipped:false, partOfPlan:!!partOfPlan,
+  return {name:e.name, cue:e.cue, hasWeight:e.hasWeight, activity:!!e.activity, minutes:e.minutes!=null?e.minutes:null,
+    weight:e.weight, sets:e.sets, reps:e.reps, skipped:false, partOfPlan:!!partOfPlan,
     youtube:e.youtube||'', videoId:e.videoId||null};
+}
+function bikeRow(){
+  const t=S.t.exercises.find(e=>e.name.toLowerCase()==='bike ride');
+  return t?rowFrom(t,false):{name:'Bike Ride',cue:'',hasWeight:false,activity:true,minutes:null,
+    weight:null,sets:3,reps:12,skipped:false,partOfPlan:false,youtube:'',videoId:null};
+}
+/* after Day 1 / Day 2 / Football captures: offer to log a bike ride too */
+function maybeAddBike(b){
+  if(b.exercises.some(x=>x.name.toLowerCase()==='bike ride')) return;
+  if(confirm('Add bike ride?')) b.exercises.push(bikeRow());
 }
 
 /* ================= helpers ================= */
@@ -335,14 +371,19 @@ function fmtDate(isoStr){
 }
 const fmtW=x=>!x.hasWeight?'':(x.weight==null?'— kg':x.weight+' kg');
 const fmtVol=x=>x.sets+' × '+x.reps;
+const isFootball=x=>x.activity&&/^football/i.test(x.name);
 function bundleLabel(e){
   const extras=e.exercises.filter(x=>!x.partOfPlan).length;
-  if(!e.plans.length) return 'Mixed ('+e.exercises.length+')';
+  if(!e.plans.length){
+    const fb=e.exercises.find(isFootball);
+    if(fb){ const others=e.exercises.length-1; return fb.name+(others?' +'+others:''); }
+    return 'Mixed ('+e.exercises.length+')';
+  }
   let base=e.plans.includes('D1')&&e.plans.includes('D2')?'Day 1+2':(e.plans[0]==='D1'?'Day 1':'Day 2');
   return extras?base+' +'+extras+' extra':base;
 }
 function chipInfo(e){
-  if(!e.plans.length) return {cls:'MIX',txt:'Mix'};
+  if(!e.plans.length) return e.exercises.some(isFootball)?{cls:'FB',txt:'FB'}:{cls:'MIX',txt:'Mix'};
   if(e.plans.length>1) return {cls:'D1',txt:'D1+2'};
   return {cls:e.plans[0],txt:e.plans[0]};
 }
@@ -370,6 +411,7 @@ const ICONS={
   search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   trophy:'<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 5H4v1.5A3.5 3.5 0 0 0 7.5 10M17 5h3v1.5A3.5 3.5 0 0 1 16.5 10"/>',
   bolt:'<path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H13z"/>',
+  ball:'<circle cx="12" cy="12" r="9"/><path d="m12 7.4 4.3 3.1-1.6 5H9.3l-1.6-5z"/>',
 };
 const ico=(n,s=20,w=2)=>'<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+ICONS[n]+'</svg>';
 
@@ -460,6 +502,8 @@ function render(){
     if(parts[0]==='capture') return viewCapture(M,parts[1]);
     if(parts[0]==='single'&&!parts[1]) return viewPicker(M);
     if(parts[0]==='single') return viewSingle(M,parts[1]);
+    if(parts[0]==='football'&&!parts[1]) return viewFootballPick(M);
+    if(parts[0]==='football') return viewFootball(M,parts[1]);
     if(parts[0]==='entry') return viewDetail(M,parts[1]);
     if(parts[0]==='editday') return viewEditDay(M,parts[1]);
     if(parts[0]==='weeks') return viewWeeks(M);
@@ -489,6 +533,10 @@ function buildRow(x,opts){
     skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip'; };
   if(opts.removable) row.querySelector('.rmbtn').onclick=()=>opts.onRemove(row);
   const ctls=row.querySelector('.controls');
+  if(x.activity){
+    ctls.appendChild(stepCtl('Minutes (optional)', x.minutes, 5, v=>x.minutes=v, {blankable:true}));
+    return row;
+  }
   if(x.hasWeight){
     ctls.appendChild(stepCtl('Weight (kg)', x.weight, 2.5, v=>{ x.weight=v;
       row.querySelector('.stepper').classList.toggle('blankhl',v==null); }, {blankable:true}));
@@ -523,11 +571,15 @@ function viewHome(M){
       <button class="btn" id="bD1">${ico('plus',17)} Day 1</button>
       <button class="btn" id="bD2">${ico('plus',17)} Day 2</button>
     </div>
-    <button class="btn secondary" id="bSingle">${ico('search',16)} Add Single Exercise</button>
+    <div class="btnrow">
+      <button class="btn secondary" id="bFB"><span class="chip fb">${ico('ball',15)}</span> Football</button>
+      <button class="btn secondary" id="bSingle">${ico('search',16)} Single Exercise</button>
+    </div>
     <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
     <div id="feed"></div>`;
   $('#bD1').onclick=()=>nav('capture/D1');
   $('#bD2').onclick=()=>nav('capture/D2');
+  $('#bFB').onclick=()=>nav('football');
   $('#bSingle').onclick=()=>nav('single');
   const feed=$('#feed');
   if(!S.entries.length){ feed.innerHTML='<p class="empty">Nothing here yet.<br>Add your first workout above.</p>'; return; }
@@ -580,12 +632,50 @@ function viewCapture(M,plan){
       if(!b.plans.includes(plan)) b.plans.push(plan);
       if(note) b.note=b.note?b.note+'\n'+note:note;
     }
+    maybeAddBike(b);
     computePRs(b);
     await saveEntry(b);
     if(!prToast(b)) toast('Workout saved');
     nav('home');
   };
   formBar(plan==='D1'?'Day 1':'Day 2','home',doSave);
+  $('#bSave').onclick=doSave;
+}
+
+/* football: pick game/training, then a one-activity capture */
+function viewFootballPick(M){
+  setTab('home'); setBar('Football','home');
+  [['game','Football Game'],['training','Football Training']].forEach(([slug,name])=>{
+    const b=document.createElement('button'); b.className='pickrow';
+    b.innerHTML=`<span class="chip fb">${ico('ball',15)}</span><span class="pname">${esc(name)}</span><span class="chev">${ico('chevR',16)}</span>`;
+    b.onclick=()=>nav('football/'+slug);
+    M.appendChild(b);
+  });
+}
+function viewFootball(M,slug){
+  setTab('home');
+  const name=slug==='training'?'Football Training':'Football Game';
+  const t=S.t.exercises.find(e=>e.name.toLowerCase()===name.toLowerCase());
+  const x=t?rowFrom(t,false):{name,cue:'',hasWeight:false,activity:true,minutes:null,
+    weight:null,sets:3,reps:12,skipped:false,partOfPlan:false,youtube:'',videoId:null};
+  setBar(name,'football');
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${todayStr()}" max="${todayStr()}"></div><div id="exlist"></div>
+    <button class="btn" id="bSave">Save</button>`;
+  M.appendChild(wrap);
+  $('#exlist').appendChild(buildRow(x));
+  const doSave=async()=>{
+    const date=$('#fDate').value||todayStr();
+    let b=entryFor(date);
+    if(!b) b={id:uid(), date, createdAt:Date.now(), plans:[], exercises:[x], note:''};
+    else b.exercises.push(x);
+    maybeAddBike(b);
+    computePRs(b);
+    await saveEntry(b);
+    toast(name+' saved');
+    nav('home');
+  };
+  formBar(name,'football',doSave);
   $('#bSave').onclick=doSave;
 }
 
@@ -645,7 +735,7 @@ function viewDetail(M,id){
   const rows=e.exercises.map(x=>{
     const hasVid=x.videoId||ytId(x.youtube);
     return `<tr><td>${esc(x.name)}${hasVid?' <button class="videobtn" data-v="'+esc(x.name)+'" style="width:26px;height:26px">'+ico('play',12)+'</button>':''}${x.skipped?'<br><span class="skiptag">SKIPPED</span>':''}</td>
-      <td class="num">${x.skipped?'—':(x.hasWeight?esc(fmtW(x))+'<br>':'')+esc(fmtVol(x))}</td></tr>`;
+      <td class="num">${x.skipped?'—':(x.activity?(x.minutes!=null?x.minutes+' min':'—'):(x.hasWeight?esc(fmtW(x))+'<br>':'')+esc(fmtVol(x)))}</td></tr>`;
   }).join('');
   const prHtml=(e.prs&&e.prs.length)?'<div class="card">'+e.prs.map(p=>
     '<div class="prline">'+ico('trophy',16)+'<span>New PR — '+esc(p.name)+' '+p.weight+' kg</span></div>').join('')+'</div>':'';
@@ -753,7 +843,7 @@ function viewSettings(M){
     const row=document.createElement('div'); row.className='setrow';
     row.innerHTML=`<div class="setname"><div class="n">${esc(ex.name)}
         ${ex.d1?'<span class="daychip D1">D1</span>':''}${ex.d2?'<span class="daychip D2">D2</span>':''}</div>
-      <div class="s">${ex.hasWeight?(ex.weight==null?'no weight yet':ex.weight+' kg')+' · ':''}${esc(fmtVol(ex))}${(ex.videoId||ytId(ex.youtube))?' · video':''}</div></div>
+      <div class="s">${ex.activity?'activity (minutes)':(ex.hasWeight?(ex.weight==null?'no weight yet':ex.weight+' kg')+' · ':'')+esc(fmtVol(ex))}${(ex.videoId||ytId(ex.youtube))?' · video':''}</div></div>
       <button class="iconbtn up" ${i===0?'disabled':''}>${ico('chevU',16)}</button>
       <button class="iconbtn down" ${i===S.t.exercises.length-1?'disabled':''}>${ico('chevD',16)}</button>
       <button class="iconbtn edit">${ico('pencil',15)}</button>`;
@@ -796,7 +886,8 @@ function viewExercise(M,exId){
       </div></div>
     <div class="field"><label>Type</label><select id="fType">
       <option value="w">Weight + reps</option>
-      <option value="r">Reps only (bodyweight)</option></select></div>
+      <option value="r">Reps only (bodyweight)</option>
+      <option value="a">Activity (minutes)</option></select></div>
     <div class="field" id="loadField"></div>
     <div class="controls" style="margin-bottom:14px" id="volCtl"></div>
     <div class="field"><label>YouTube link (optional)</label><input type="url" id="fYt" value="${esc(w.youtube)}" placeholder="https://youtu.be/…"></div>
@@ -809,12 +900,12 @@ function viewExercise(M,exId){
       <input type="file" id="fVid" accept="video/*" class="hidden"></div>
     <button class="btn" id="bSave">${isNew?'Add Exercise':'Save Exercise'}</button>
     ${isNew?'':'<button class="btn danger" id="bDel" style="margin-top:10px">Delete Exercise</button>'}`;
-  $('#fType').value=w.hasWeight?'w':'r';
+  $('#fType').value=w.activity?'a':(w.hasWeight?'w':'r');
   $('#tD1').onclick=e=>{ e.preventDefault(); w.d1=!w.d1; $('#tD1').classList.toggle('on',w.d1); };
   $('#tD2').onclick=e=>{ e.preventDefault(); w.d2=!w.d2; $('#tD2').classList.toggle('on',w.d2); };
   function renderLoadField(){
     const lf=$('#loadField');
-    if(!w.hasWeight){ lf.innerHTML=''; return; }
+    if(w.activity||!w.hasWeight){ lf.innerHTML=''; return; }
     lf.innerHTML='<label>Default weight (kg) — leave blank until known</label>';
     lf.appendChild(stepCtl('',w.weight,2.5,v=>{ w.weight=v;
       lf.querySelector('.stepper').classList.toggle('blankhl',v==null); },{blankable:true}));
@@ -823,11 +914,15 @@ function viewExercise(M,exId){
   }
   function renderVol(){
     const vc=$('#volCtl'); vc.innerHTML='';
+    if(w.activity) return;
     vc.appendChild(stepCtl('Default sets',w.sets,1,v=>w.sets=v));
     vc.appendChild(stepCtl('Default reps',w.reps,1,v=>w.reps=v));
   }
   renderLoadField(); renderVol();
-  $('#fType').onchange=e=>{ w.hasWeight=e.target.value==='w'; if(!w.hasWeight) w.weight=null; renderLoadField(); };
+  $('#fType').onchange=e=>{ const v=e.target.value;
+    w.activity=v==='a'; w.hasWeight=v==='w';
+    if(!w.hasWeight) w.weight=null;
+    renderLoadField(); renderVol(); };
   $('#bVid').onclick=()=>$('#fVid').click();
   $('#fVid').onchange=e=>{
     const f=e.target.files[0]; if(!f) return;

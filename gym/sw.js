@@ -1,5 +1,5 @@
 /* Gym Trainer service worker — cache-first app shell for offline use. */
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = 'gym-trainer-' + VERSION;
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 

@@ -35,9 +35,23 @@ best (earlier dates only; first-ever log doesn't count) triggers a PR toast,
 a trophy marker on the day card, and a PR flag on the progress chart point.
 Blank weights never trigger PRs.
 
+## Football & bike ride (added 2026-07-28)
+
+- **Football** button on Home → choose **Football Game** or **Football
+  Training** → capture with date and optional minutes. Merges into the day
+  bundle like everything else; a football-only day is labeled by the football
+  activity ("Football Game +1") with a violet FB badge/chip.
+- After saving a Day 1, Day 2, or Football capture, the app asks
+  **"Add bike ride?"** — yes appends a Bike Ride to that day. No prompt if the
+  day already has one.
+- **Bike Ride** is also available under Add Single Exercise.
+- All three are "activity" exercises: no weight/sets/reps, an optional
+  minutes field, excluded from PRs and the progress chart. The Exercises tab
+  supports the activity type (add/edit/remove like any exercise).
+
 ## Tabs
 
-**Home** (3 buttons + timeline) · **Weeks** · **Progress** · **Exercises**
+**Home** (Day 1 · Day 2 · Football · Single Exercise + timeline) · **Weeks** · **Progress** · **Exercises**
 
 - **Weeks**: one row per week, newest first — "This week" / "Last week" /
   "Jul 20–26", workout count, tappable chips (D1/D2/D1+2/Mix) in date order,
