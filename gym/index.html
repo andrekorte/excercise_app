@@ -889,24 +889,29 @@ function viewProgress(M,selRaw){
     return;
   }
   const names=[...series.keys()];
+  const ALL='__all';
   let sel=selRaw?decodeURIComponent(selRaw):names[0];
-  if(!series.has(sel)) sel=names[0];
+  if(sel!==ALL&&!series.has(sel)) sel=names[0];
   const selWrap=document.createElement('div'); selWrap.className='field';
-  selWrap.innerHTML='<label>Exercise</label><select id="fSel">'+names.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('')+'</select>';
+  selWrap.innerHTML='<label>Exercise</label><select id="fSel">'+
+    `<option value="${ALL}" ${sel===ALL?'selected':''}>All exercises</option>`+
+    names.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('')+'</select>';
   M.appendChild(selWrap);
   $('#fSel').onchange=e=>{ location.replace('#progress/'+encodeURIComponent(e.target.value)); };
-  const pts=series.get(sel);
-  const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative';
+  for(const name of (sel===ALL?names:[sel])) M.appendChild(chartBox(name,series.get(name)));
+}
+function chartBox(name,pts){
+  const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative'; box.style.marginBottom='10px';
   const latest=pts[pts.length-1].value, first=pts[0].value;
   const delta=latest-first;
   const prTotal=pts.filter(p=>p.pr).length;
-  box.innerHTML=`<h3>${esc(sel)}</h3><div class="vsub">${pts.length} workout${pts.length>1?'s':''} · latest ${latest} kg${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(Math.round(delta*100)/100)} kg since first`:''}${prTotal?' · '+prTotal+' PR'+(prTotal>1?'s':''):''}</div>`;
+  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} workout${pts.length>1?'s':''} · latest ${latest} kg${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(Math.round(delta*100)/100)} kg since first`:''}${prTotal?' · '+prTotal+' PR'+(prTotal>1?'s':''):''}</div>`;
   box.appendChild(buildChart(pts,'kg'));
   const dt=document.createElement('details'); dt.className='datatable';
   dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th></th><th>kg</th></tr>'+
     pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td><td>${p.pr?'PR':''}</td><td>${p.value}</td></tr>`).reverse().join('')+'</table>';
   box.appendChild(dt);
-  M.appendChild(box);
+  return box;
 }
 function buildChart(pts,unit){
   const W=520,H=260,padL=40,padR=14,padT=14,padB=30;
