@@ -543,7 +543,7 @@ function viewCapture(M,sessionKey,editId){
         ${isEdit?'':'<button class="donebtn" title="Mark done">'+ico('check',18)+'</button>'}
         <span class="exname">${esc(x.name)}</span>
         ${hasVid?'<button class="videobtn" title="Watch video">'+ico('play',15)+'</button>':''}
-        <button class="skipbtn ${x.skipped?'on':''}">${x.skipped?'Skipped':'Skip'}</button>
+        ${isEdit?'<button class="skipbtn '+(x.skipped?'on':'')+'">'+(x.skipped?'Skipped':'Skip')+'</button>':''}
       </div>
       ${x.cue?'<div class="cue">'+esc(x.cue)+'</div>':''}
       <div class="exbody"><div class="controls"></div></div>`;
@@ -553,9 +553,8 @@ function viewCapture(M,sessionKey,editId){
       const on=doneB.classList.toggle('on'); row.classList.toggle('done',on);
       on?doneSet.add(x):doneSet.delete(x); updateCount(); };
     const skipB=row.querySelector('.skipbtn');
-    skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
+    if(skipB) skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
       skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip';
-      if(x.skipped&&doneB){ doneSet.delete(x); doneB.classList.remove('on'); row.classList.remove('done'); }
       updateCount(); };
     const ctls=row.querySelector('.controls');
     // load control
@@ -574,6 +573,12 @@ function viewCapture(M,sessionKey,editId){
   const doSave=async()=>{
     entry.date=$('#fDate').value||todayStr();
     entry.note=$('#fNote').value.trim();
+    if(!isEdit){
+      /* only ticked-off exercises make it into the day */
+      const chosen=entry.exercises.filter(x=>doneSet.has(x));
+      if(!chosen.length){ alert('Tick off at least one exercise before saving.'); return; }
+      entry.exercises=chosen;
+    }
     await saveEntry(entry);
     toast(isEdit?'Workout updated':'Workout saved');
     nav(isEdit?('entry/'+entry.id):'home');

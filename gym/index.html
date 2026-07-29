@@ -529,25 +529,26 @@ function buildRow(x,opts){
   opts=opts||{};
   const row=document.createElement('div'); row.className='exrow'+(x.skipped?' skipped':'');
   const hasVid=x.videoId||ytId(x.youtube);
+  const skipHtml=opts.noSkip?'':'<button class="skipbtn '+(x.skipped?'on':'')+'">'+(x.skipped?'Skipped':'Skip')+'</button>';
   row.innerHTML=`<div class="extitle">
       ${opts.tickable?'<button class="donebtn" title="Mark done">'+ico('check',18)+'</button>':''}
       <span class="exname">${esc(x.name)}</span>
       ${hasVid?'<button class="videobtn" title="Watch video">'+ico('play',15)+'</button>':''}
-      <button class="skipbtn ${x.skipped?'on':''}">${x.skipped?'Skipped':'Skip'}</button>
+      ${skipHtml}
       ${opts.removable?'<button class="rmbtn" title="Remove">'+ico('x',14)+'</button>':''}
     </div>
     ${x.cue?'<div class="cue">'+esc(x.cue)+'</div>':''}
     <div class="exbody"><div class="controls"></div></div>`;
   if(hasVid) row.querySelector('.videobtn').onclick=()=>openVideo(x);
-  /* tick-off is purely visual for the live workout, never saved */
+  /* ticked = included in the saved day; unticked rows are left out */
   const doneB=row.querySelector('.donebtn');
   if(doneB) doneB.onclick=()=>{ const on=doneB.classList.toggle('on');
-    row.classList.toggle('done',on); if(opts.onTick) opts.onTick(); };
+    row.classList.toggle('done',on); if(opts.onTick) opts.onTick(x,on); };
   const skipB=row.querySelector('.skipbtn');
-  skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
+  if(skipB) skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
     skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip';
     if(x.skipped&&doneB){ doneB.classList.remove('on'); row.classList.remove('done'); }
-    if(opts.onTick) opts.onTick(); };
+    if(opts.onTick) opts.onTick(x,false); };
   if(opts.removable) row.querySelector('.rmbtn').onclick=()=>opts.onRemove(row);
   const ctls=row.querySelector('.controls');
   if(x.activity){
@@ -623,7 +624,7 @@ function viewCapture(M,plan){
   const seedFrom=entryFor(todayStr());
   if(seedFrom) for(const r of rows){
     const ex=seedFrom.exercises.find(x=>x.name===r.name);
-    if(ex){ r.weight=ex.weight; r.sets=ex.sets; r.reps=ex.reps; r.skipped=ex.skipped; }
+    if(ex){ r.weight=ex.weight; r.sets=ex.sets; r.reps=ex.reps; }
   }
   if(!rows.length){ M.innerHTML='<p class="empty">No exercises assigned to this day yet — add some in the Exercises tab.</p>'; return; }
   const wrap=document.createElement('div');
@@ -634,20 +635,25 @@ function viewCapture(M,plan){
     <button class="btn" id="bSave">Save Workout</button>`;
   M.appendChild(wrap);
   const list=$('#exlist');
+  const doneSet=new Set();
   const updateCount=()=>{ const el=$('#doneCount'); if(!el) return;
-    el.textContent=document.querySelectorAll('.exrow.done').length+' of '+rows.filter(r=>!r.skipped).length+' done'; };
-  rows.forEach(x=>list.appendChild(buildRow(x,{tickable:true,onTick:updateCount})));
+    el.textContent=doneSet.size+' of '+rows.length+' done'; };
+  rows.forEach(x=>list.appendChild(buildRow(x,{tickable:true,noSkip:true,
+    onTick:(xx,on)=>{ on?doneSet.add(xx):doneSet.delete(xx); updateCount(); }})));
   updateCount();
   const doSave=async()=>{
     const date=$('#fDate').value||todayStr();
     const note=$('#fNote').value.trim();
+    /* only ticked-off exercises make it into the day */
+    const chosen=rows.filter(r=>doneSet.has(r));
+    if(!chosen.length){ alert('Tick off at least one exercise before saving.'); return; }
     let b=entryFor(date);
     if(!b){
-      b={id:uid(), date, createdAt:Date.now(), plans:[plan], exercises:rows, note};
+      b={id:uid(), date, createdAt:Date.now(), plans:[plan], exercises:chosen, note};
     } else {
-      for(const r of rows){
+      for(const r of chosen){
         const ex=b.exercises.find(x=>x.name===r.name);
-        if(ex){ ex.weight=r.weight; ex.sets=r.sets; ex.reps=r.reps; ex.skipped=r.skipped; ex.partOfPlan=true; }
+        if(ex){ ex.weight=r.weight; ex.sets=r.sets; ex.reps=r.reps; ex.skipped=false; ex.partOfPlan=true; }
         else b.exercises.push(r);
       }
       if(!b.plans.includes(plan)) b.plans.push(plan);
@@ -684,8 +690,12 @@ function viewFootball(M,slug){
   wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${todayStr()}" max="${todayStr()}"></div><div id="exlist"></div>
     <button class="btn" id="bSave">Save</button>`;
   M.appendChild(wrap);
-  $('#exlist').appendChild(buildRow(x,{tickable:true}));
+  let ticked=true; // choosing football is explicit, so it starts ticked
+  const rowEl=buildRow(x,{tickable:true,noSkip:true,onTick:(xx,on)=>ticked=on});
+  rowEl.querySelector('.donebtn').classList.add('on'); rowEl.classList.add('done');
+  $('#exlist').appendChild(rowEl);
   const doSave=async()=>{
+    if(!ticked){ alert('Tick off the exercise to save it.'); return; }
     const date=$('#fDate').value||todayStr();
     let b=entryFor(date);
     if(!b) b={id:uid(), date, createdAt:Date.now(), plans:[], exercises:[x], note:''};
@@ -732,8 +742,12 @@ function viewSingle(M,exId){
   wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${todayStr()}" max="${todayStr()}"></div><div id="exlist"></div>
     <button class="btn" id="bSave">Add to Workout</button>`;
   M.appendChild(wrap);
-  $('#exlist').appendChild(buildRow(x,{tickable:true}));
+  let ticked=true; // picking a single exercise is explicit, so it starts ticked
+  const rowEl=buildRow(x,{tickable:true,noSkip:true,onTick:(xx,on)=>ticked=on});
+  rowEl.querySelector('.donebtn').classList.add('on'); rowEl.classList.add('done');
+  $('#exlist').appendChild(rowEl);
   const doSave=async()=>{
+    if(!ticked){ alert('Tick off the exercise to save it.'); return; }
     const date=$('#fDate').value||todayStr();
     let b=entryFor(date);
     if(!b) b={id:uid(), date, createdAt:Date.now(), plans:[], exercises:[x], note:''};
