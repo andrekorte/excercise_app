@@ -24,6 +24,7 @@
   --tint-c-bg:#e2f4ec; --tint-c-ink:#0d7a52;
   --tint-i-bg:#fbe7e6; --tint-i-ink:#a53730;
   --tint-f-bg:#eceafa; --tint-f-ink:#4a3aa7;
+  --done:#0ca30c; --done-bg:#eaf7ea;
   --warn-bg:#fdf3da;
   --shadow:0 1px 2px rgba(20,20,18,.05);
 }
@@ -37,6 +38,7 @@
     --tint-c-bg:#132f26; --tint-c-ink:#57c9a0;
     --tint-i-bg:#3a1c1b; --tint-i-ink:#e5837c;
     --tint-f-bg:#262043; --tint-f-ink:#aaa2ee;
+    --done:#1db31d; --done-bg:#132b13;
     --warn-bg:#33290f;
     --shadow:none;
   }
@@ -133,6 +135,13 @@ textarea{min-height:96px; resize:vertical}
 .field{margin-bottom:14px}
 .field>label{display:block; font-size:13px; color:var(--muted); font-weight:650; margin:0 2px 6px}
 
+.donebtn{width:34px; height:34px; border-radius:999px; border:0; flex:none; cursor:pointer;
+  background:var(--page); box-shadow:inset 0 0 0 1.5px var(--baseline); color:transparent;
+  display:inline-flex; align-items:center; justify-content:center}
+.donebtn.on{background:var(--done); color:#fff; box-shadow:none; animation:pop .3s cubic-bezier(.3,1.6,.6,1)}
+@keyframes pop{0%{transform:scale(.7)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+.exrow.done{background:var(--done-bg); box-shadow:inset 0 0 0 1.5px rgba(12,163,12,.4)}
+.exrow.skipped .donebtn{opacity:.3; pointer-events:none}
 .skipbtn{border:0; border-radius:999px; padding:6px 13px; font-size:13px; font-weight:600;
   background:var(--page); color:var(--ink-2); box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer; font-family:inherit}
 .skipbtn.on{background:var(--tint-i-bg); color:var(--tint-i-ink); box-shadow:none}
@@ -412,6 +421,7 @@ const ICONS={
   trophy:'<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 5H4v1.5A3.5 3.5 0 0 0 7.5 10M17 5h3v1.5A3.5 3.5 0 0 1 16.5 10"/>',
   bolt:'<path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H13z"/>',
   ball:'<circle cx="12" cy="12" r="9"/><path d="m12 7.4 4.3 3.1-1.6 5H9.3l-1.6-5z"/>',
+  check:'<path d="m5 13 4.5 4.5L19 7"/>',
 };
 const ico=(n,s=20,w=2)=>'<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+ICONS[n]+'</svg>';
 
@@ -520,6 +530,7 @@ function buildRow(x,opts){
   const row=document.createElement('div'); row.className='exrow'+(x.skipped?' skipped':'');
   const hasVid=x.videoId||ytId(x.youtube);
   row.innerHTML=`<div class="extitle">
+      ${opts.tickable?'<button class="donebtn" title="Mark done">'+ico('check',18)+'</button>':''}
       <span class="exname">${esc(x.name)}</span>
       ${hasVid?'<button class="videobtn" title="Watch video">'+ico('play',15)+'</button>':''}
       <button class="skipbtn ${x.skipped?'on':''}">${x.skipped?'Skipped':'Skip'}</button>
@@ -528,9 +539,15 @@ function buildRow(x,opts){
     ${x.cue?'<div class="cue">'+esc(x.cue)+'</div>':''}
     <div class="exbody"><div class="controls"></div></div>`;
   if(hasVid) row.querySelector('.videobtn').onclick=()=>openVideo(x);
+  /* tick-off is purely visual for the live workout, never saved */
+  const doneB=row.querySelector('.donebtn');
+  if(doneB) doneB.onclick=()=>{ const on=doneB.classList.toggle('on');
+    row.classList.toggle('done',on); if(opts.onTick) opts.onTick(); };
   const skipB=row.querySelector('.skipbtn');
   skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
-    skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip'; };
+    skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip';
+    if(x.skipped&&doneB){ doneB.classList.remove('on'); row.classList.remove('done'); }
+    if(opts.onTick) opts.onTick(); };
   if(opts.removable) row.querySelector('.rmbtn').onclick=()=>opts.onRemove(row);
   const ctls=row.querySelector('.controls');
   if(x.activity){
@@ -611,12 +628,16 @@ function viewCapture(M,plan){
   if(!rows.length){ M.innerHTML='<p class="empty">No exercises assigned to this day yet — add some in the Exercises tab.</p>'; return; }
   const wrap=document.createElement('div');
   wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${todayStr()}" max="${todayStr()}"></div>
+    <div class="weekline" id="doneCount" style="margin-top:2px"></div>
     <div id="exlist"></div>
     <div class="field"><label>Note (optional)</label><textarea id="fNote" placeholder="e.g. felt strong today"></textarea></div>
     <button class="btn" id="bSave">Save Workout</button>`;
   M.appendChild(wrap);
   const list=$('#exlist');
-  rows.forEach(x=>list.appendChild(buildRow(x)));
+  const updateCount=()=>{ const el=$('#doneCount'); if(!el) return;
+    el.textContent=document.querySelectorAll('.exrow.done').length+' of '+rows.filter(r=>!r.skipped).length+' done'; };
+  rows.forEach(x=>list.appendChild(buildRow(x,{tickable:true,onTick:updateCount})));
+  updateCount();
   const doSave=async()=>{
     const date=$('#fDate').value||todayStr();
     const note=$('#fNote').value.trim();
@@ -663,7 +684,7 @@ function viewFootball(M,slug){
   wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${todayStr()}" max="${todayStr()}"></div><div id="exlist"></div>
     <button class="btn" id="bSave">Save</button>`;
   M.appendChild(wrap);
-  $('#exlist').appendChild(buildRow(x));
+  $('#exlist').appendChild(buildRow(x,{tickable:true}));
   const doSave=async()=>{
     const date=$('#fDate').value||todayStr();
     let b=entryFor(date);
@@ -711,7 +732,7 @@ function viewSingle(M,exId){
   wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${todayStr()}" max="${todayStr()}"></div><div id="exlist"></div>
     <button class="btn" id="bSave">Add to Workout</button>`;
   M.appendChild(wrap);
-  $('#exlist').appendChild(buildRow(x));
+  $('#exlist').appendChild(buildRow(x,{tickable:true}));
   const doSave=async()=>{
     const date=$('#fDate').value||todayStr();
     let b=entryFor(date);
