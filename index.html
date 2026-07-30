@@ -294,6 +294,8 @@ async function loadState(){
   S.templates=t;
   await seedHistory();
   S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
+  // one-workout-per-day model: legacy entries carry a single `session`
+  S.entries.forEach(e=>{ if(e.type==='workout'&&!e.sessions) e.sessions=e.session?[e.session]:[]; });
 }
 /* One-time import of the pre-app paper log (July 2026). Runs once per device,
    guarded by a flag, so it never duplicates or touches entries captured later. */
@@ -476,7 +478,8 @@ function viewHome(M){
     const c=document.createElement('div'); c.className='card tappable';
     let badge,sub;
     if(e.type==='workout'){
-      badge=`<span class="badge ${e.session}">${e.session}</span>`;
+      const sl=e.sessions&&e.sessions.length?e.sessions:[e.session];
+      badge=`<span class="badge ${sl[0]}">${sl.join('+')}</span>`;
       const done=e.exercises.filter(x=>!x.skipped).length, skip=e.exercises.length-done;
       sub=done+' exercise'+(done!==1?'s':'')+(skip?', '+skip+' skipped':'')+(e.note?' · note':'');
     } else if(e.type==='physio'){
@@ -516,13 +519,19 @@ function viewCapture(M,sessionKey,editId){
     const t=S.templates[sessionKey];
     if(!t){ nav('capture'); return; }
     entry={
-      id:uid(), type:'workout', session:sessionKey, date:todayStr(), createdAt:Date.now(), note:'',
+      id:uid(), type:'workout', session:sessionKey, sessions:[sessionKey], date:todayStr(), createdAt:Date.now(), note:'',
       exercises:t.exercises.map(e=>({
         name:e.name, cue:e.cue, load:JSON.parse(JSON.stringify(e.load)),
         sets:e.sets, reps:e.reps, mode:e.mode, skipped:false,
         youtube:e.youtube||'', videoId:e.videoId||null, videoOwned:false
       }))
     };
+    // prefill from today's workout so re-capturing shows what's already logged
+    const seedFrom=S.entries.find(e=>e.type==='workout'&&e.date===todayStr());
+    if(seedFrom) for(const r of entry.exercises){
+      const ex=seedFrom.exercises.find(x=>x.name===r.name);
+      if(ex){ r.load=JSON.parse(JSON.stringify(ex.load)); r.sets=ex.sets; r.reps=ex.reps; }
+    }
     setBar('Session '+sessionKey,'capture');
   }
   const wrap=document.createElement('div');
@@ -571,17 +580,33 @@ function viewCapture(M,sessionKey,editId){
   });
   updateCount();
   const doSave=async()=>{
-    entry.date=$('#fDate').value||todayStr();
-    entry.note=$('#fNote').value.trim();
-    if(!isEdit){
-      /* only ticked-off exercises make it into the day */
-      const chosen=entry.exercises.filter(x=>doneSet.has(x));
-      if(!chosen.length){ alert('Tick off at least one exercise before saving.'); return; }
-      entry.exercises=chosen;
+    const date=$('#fDate').value||todayStr();
+    const note=$('#fNote').value.trim();
+    if(isEdit){
+      entry.date=date; entry.note=note;
+      await saveEntry(entry);
+      toast('Workout updated'); nav('entry/'+entry.id); return;
     }
-    await saveEntry(entry);
-    toast(isEdit?'Workout updated':'Workout saved');
-    nav(isEdit?('entry/'+entry.id):'home');
+    /* only ticked-off exercises make it into the day */
+    const chosen=entry.exercises.filter(x=>doneSet.has(x));
+    if(!chosen.length){ alert('Tick off at least one exercise before saving.'); return; }
+    /* one workout per day: merge into that day's entry if it exists */
+    let b=S.entries.find(e=>e.type==='workout'&&e.date===date);
+    if(!b){
+      entry.date=date; entry.note=note; entry.exercises=chosen; b=entry;
+    } else {
+      for(const r of chosen){
+        const ex=b.exercises.find(x=>x.name===r.name);
+        if(ex){ ex.load=r.load; ex.sets=r.sets; ex.reps=r.reps; ex.skipped=false; }
+        else b.exercises.push(r);
+      }
+      if(!b.sessions) b.sessions=b.session?[b.session]:[];
+      if(!b.sessions.includes(sessionKey)) b.sessions.push(sessionKey);
+      if(note) b.note=b.note?b.note+'\n'+note:note;
+    }
+    await saveEntry(b);
+    toast('Workout saved');
+    nav('home');
   };
   formBar(isEdit?'Edit Workout':'Session '+sessionKey, isEdit?('entry/'+editId):'capture', doSave);
   $('#bSave').onclick=doSave;
@@ -634,7 +659,8 @@ function viewDetail(M,id){
   const e=S.entries.find(x=>x.id===id);
   if(!e){ setBar('Entry','home'); M.innerHTML='<p class="empty">Entry not found.</p>'; return; }
   if(e.type==='workout'){
-    setBar('Session '+e.session+' · '+fmtDate(e.date),'home');
+    const sl=e.sessions&&e.sessions.length?e.sessions:[e.session];
+    setBar('Session '+sl.join('+')+' · '+fmtDate(e.date),'home');
     const rows=e.exercises.map(x=>{
       const hasVid=x.videoId||ytId(x.youtube);
       return `<tr><td>${esc(x.name)}${hasVid?' <button class="videobtn" data-v="'+esc(x.name)+'" style="width:26px;height:26px">'+ico('play',12)+'</button>':''}${x.skipped?'<br><span class="skiptag">SKIPPED</span>':''}</td>
