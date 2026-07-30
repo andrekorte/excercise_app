@@ -537,6 +537,7 @@ function viewCapture(M,sessionKey,editId){
   const wrap=document.createElement('div');
   wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${entry.date}" max="${todayStr()}"></div>
     ${isEdit?'':'<div class="weekline" id="doneCount" style="margin-top:2px"></div>'}<div id="exlist"></div>
+    ${isEdit?'<button class="btn secondary" id="bAddEx" style="margin-bottom:14px">+ Add exercise</button><div id="addSel" class="field hidden"></div>':''}
     <div class="field"><label>Note (optional)</label><textarea id="fNote" placeholder="e.g. shoulder felt tight">${esc(entry.note)}</textarea></div>
     <button class="btn" id="bSave">${isEdit?'Save Changes':'Save Workout'}</button>`;
   M.appendChild(wrap);
@@ -545,7 +546,7 @@ function viewCapture(M,sessionKey,editId){
   const doneSet=new Set();
   const updateCount=()=>{ const el=$('#doneCount'); if(!el) return;
     el.textContent=doneSet.size+' of '+entry.exercises.filter(x=>!x.skipped).length+' done'; };
-  entry.exercises.forEach((x)=>{
+  const addRowEl=(x)=>{
     const row=document.createElement('div'); row.className='exrow'+(x.skipped?' skipped':'');
     const hasVid=x.videoId||ytId(x.youtube);
     row.innerHTML=`<div class="extitle">
@@ -577,8 +578,27 @@ function viewCapture(M,sessionKey,editId){
     ctls.appendChild(stepCtl('Sets', x.sets, 1, v=>x.sets=v));
     ctls.appendChild(stepCtl(x.mode==='secs'?'Hold (s)':'Reps', x.reps, 1, v=>x.reps=v));
     list.appendChild(row);
-  });
+  };
+  entry.exercises.forEach(addRowEl);
   updateCount();
+  if(isEdit) $('#bAddEx').onclick=()=>{
+    const present=new Set(entry.exercises.map(x=>x.name)), seen=new Set(), opts=[];
+    for(const k of ['A','B','C']) for(const e of S.templates[k].exercises)
+      if(!present.has(e.name)&&!seen.has(e.name)){ seen.add(e.name); opts.push({k,e}); }
+    if(!opts.length){ alert('All exercises are already in this workout.'); return; }
+    const box=$('#addSel'); box.classList.remove('hidden');
+    box.innerHTML='<select id="fAddEx"><option value="">Choose exercise…</option>'+
+      opts.map((o,i)=>'<option value="'+i+'">'+esc(o.k+' · '+o.e.name)+'</option>').join('')+'</select>';
+    $('#fAddEx').onchange=ev=>{
+      const o=opts[+ev.target.value]; if(!o) return;
+      const e=o.e;
+      const x={name:e.name, cue:e.cue, load:JSON.parse(JSON.stringify(e.load)),
+        sets:e.sets, reps:e.reps, mode:e.mode, skipped:false,
+        youtube:e.youtube||'', videoId:e.videoId||null, videoOwned:false};
+      entry.exercises.push(x); addRowEl(x);
+      box.classList.add('hidden'); box.innerHTML='';
+    };
+  };
   const doSave=async()=>{
     const date=$('#fDate').value||todayStr();
     const note=$('#fNote').value.trim();
