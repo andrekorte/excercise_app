@@ -25,6 +25,7 @@
   --tint-p-bg:#eceafa; --tint-p-ink:#4a3aa7;
   --tint-i-bg:#fbe7e6; --tint-i-ink:#a53730;
   --done:#0ca30c; --done-bg:#eaf7ea;
+  --warn:#b98200; --warn-bg:#fdf3da;
   --shadow:0 1px 2px rgba(20,20,18,.05);
 }
 @media (prefers-color-scheme: dark){
@@ -38,6 +39,7 @@
     --tint-p-bg:#262043; --tint-p-ink:#aaa2ee;
     --tint-i-bg:#3a1c1b; --tint-i-ink:#e5837c;
     --done:#1db31d; --done-bg:#132b13;
+    --warn:#e0b34c; --warn-bg:#33290f;
     --shadow:none;
   }
 }
@@ -335,6 +337,28 @@ async function seedHistory(){
 const saveTemplates=()=>kvSet('templates',S.templates);
 async function saveEntry(e){ await entryPut(e);
   S.entries=S.entries.filter(x=>x.id!==e.id).concat([e]).sort((a,b)=>(b.date.localeCompare(a.date))||(b.createdAt-a.createdAt)); }
+/* combine several workout entries logged on the same date into one */
+async function mergeDay(date){
+  const list=S.entries.filter(e=>e.type==='workout'&&e.date===date)
+    .sort((a,b)=>a.createdAt-b.createdAt);
+  if(list.length<2) return;
+  const base=list[0];
+  base.sessions=(base.sessions&&base.sessions.length)?base.sessions.slice():(base.session?[base.session]:[]);
+  for(const other of list.slice(1)){
+    const os=(other.sessions&&other.sessions.length)?other.sessions:(other.session?[other.session]:[]);
+    for(const s of os) if(!base.sessions.includes(s)) base.sessions.push(s);
+    for(const x of other.exercises){
+      const ex=base.exercises.find(v=>v.name===x.name);
+      if(ex){ ex.load=x.load; ex.sets=x.sets; ex.reps=x.reps; ex.skipped=ex.skipped&&x.skipped; }
+      else base.exercises.push(x);
+    }
+    if(other.note) base.note=base.note?base.note+'\n'+other.note:other.note;
+  }
+  base.sessions.sort();
+  await saveEntry(base);
+  for(const other of list.slice(1)) await entryDel(other.id);
+  S.entries=S.entries.filter(e=>!list.slice(1).some(o=>o.id===e.id));
+}
 async function deleteEntry(id){
   const e=S.entries.find(x=>x.id===id);
   if(e&&e.exercises) for(const x of e.exercises) if(x.videoId&&x.videoOwned) await videoDel(x.videoId).catch(()=>{});
@@ -473,6 +497,19 @@ function viewHome(M){
   $('#bPhy').onclick=()=>nav('physio');
   $('#bInj').onclick=()=>nav('injury');
   const feed=$('#feed');
+  /* days logged as several separate workouts (before same-day merging) can be combined */
+  const byDate={};
+  S.entries.filter(e=>e.type==='workout').forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
+  Object.keys(byDate).filter(d=>byDate[d].length>1).sort().reverse().forEach(d=>{
+    const n=byDate[d].length;
+    const c=document.createElement('div'); c.className='card';
+    c.style.background='var(--warn-bg)'; c.style.boxShadow='inset 0 0 0 1.5px var(--warn)';
+    c.innerHTML=`<div class="cardsub" style="color:var(--ink)">${n} separate workouts on ${esc(fmtDate(d))}.</div>`;
+    const b=document.createElement('button'); b.className='btn small'; b.style.marginTop='10px';
+    b.textContent='Merge into one workout';
+    b.onclick=async()=>{ await mergeDay(d); toast('Merged into one workout'); render(); };
+    c.appendChild(b); feed.appendChild(c);
+  });
   if(!S.entries.length){ feed.innerHTML='<p class="empty">Nothing here yet.<br>Capture your first workout above.</p>'; return; }
   for(const e of S.entries){
     const c=document.createElement('div'); c.className='card tappable';
