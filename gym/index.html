@@ -569,12 +569,13 @@ function buildRow(x,opts){
   if(opts.removable) row.querySelector('.rmbtn').onclick=()=>opts.onRemove(row);
   const ctls=row.querySelector('.controls');
   if(x.activity){
-    ctls.appendChild(stepCtl('Minutes (optional)', x.minutes, 5, v=>x.minutes=v, {blankable:true}));
-    if(needsRating(x)){
+    if(needsRating(x)){ // football games are rated, not timed
       const rc=stepCtl('Rating 1–10 (required)', x.rating, 0.5, v=>{ x.rating=v;
         rc.querySelector('.stepper').classList.toggle('blankhl',v==null); }, {blankable:true});
       if(x.rating==null) rc.querySelector('.stepper').classList.add('blankhl');
       ctls.appendChild(rc);
+    } else {
+      ctls.appendChild(stepCtl('Minutes (optional)', x.minutes, 5, v=>x.minutes=v, {blankable:true}));
     }
     return row;
   }
