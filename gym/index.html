@@ -351,7 +351,7 @@ const entryFor=date=>S.entries.find(e=>e.date===date);
 /* snapshot row from a template exercise */
 function rowFrom(e,partOfPlan){
   return {name:e.name, cue:e.cue, hasWeight:e.hasWeight, activity:!!e.activity, minutes:e.minutes!=null?e.minutes:null,
-    weight:e.weight, sets:e.sets, reps:e.reps, skipped:false, partOfPlan:!!partOfPlan,
+    rating:null, weight:e.weight, sets:e.sets, reps:e.reps, skipped:false, partOfPlan:!!partOfPlan,
     youtube:e.youtube||'', videoId:e.videoId||null};
 }
 function bikeRow(){
@@ -379,13 +379,30 @@ function fmtDate(isoStr){
   return dt.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short',year:(dt.getFullYear()===new Date().getFullYear()?undefined:'numeric')});
 }
 const fmtW=x=>!x.hasWeight?'':(x.weight==null?'— kg':x.weight+' kg');
+function actCell(x){
+  const p=[];
+  if(x.minutes!=null) p.push(x.minutes+' min');
+  if(x.rating!=null) p.push('<b style="color:var(--warn)">'+x.rating+'/10</b>');
+  return p.length?p.join('<br>'):'—';
+}
 const fmtVol=x=>x.sets+' × '+x.reps;
 const isFootball=x=>x.activity&&/^football/i.test(x.name);
+/* football games carry a 1–10 rating (decimals allowed); training does not */
+const needsRating=x=>x.activity&&/football\s*game/i.test(x.name);
+function ratingError(rows){
+  for(const x of rows){
+    if(!needsRating(x)) continue;
+    if(x.rating==null) return 'Enter a rating from 1 to 10 for the football game.';
+    if(x.rating<1||x.rating>10) return 'The rating must be between 1 and 10.';
+  }
+  return null;
+}
 function bundleLabel(e){
   const extras=e.exercises.filter(x=>!x.partOfPlan).length;
   if(!e.plans.length){
     const fb=e.exercises.find(isFootball);
-    if(fb){ const others=e.exercises.length-1; return fb.name+(others?' +'+others:''); }
+    if(fb){ const others=e.exercises.length-1;
+      return fb.name+(fb.rating!=null?' '+fb.rating+'/10':'')+(others?' +'+others:''); }
     return 'Mixed ('+e.exercises.length+')';
   }
   let base=e.plans.includes('D1')&&e.plans.includes('D2')?'Day 1+2':(e.plans[0]==='D1'?'Day 1':'Day 2');
@@ -553,6 +570,12 @@ function buildRow(x,opts){
   const ctls=row.querySelector('.controls');
   if(x.activity){
     ctls.appendChild(stepCtl('Minutes (optional)', x.minutes, 5, v=>x.minutes=v, {blankable:true}));
+    if(needsRating(x)){
+      const rc=stepCtl('Rating 1–10 (required)', x.rating, 0.5, v=>{ x.rating=v;
+        rc.querySelector('.stepper').classList.toggle('blankhl',v==null); }, {blankable:true});
+      if(x.rating==null) rc.querySelector('.stepper').classList.add('blankhl');
+      ctls.appendChild(rc);
+    }
     return row;
   }
   if(x.hasWeight){
@@ -647,6 +670,7 @@ function viewCapture(M,plan){
     /* only ticked-off exercises make it into the day */
     const chosen=rows.filter(r=>doneSet.has(r));
     if(!chosen.length){ alert('Tick off at least one exercise before saving.'); return; }
+    const rerr=ratingError(chosen); if(rerr){ alert(rerr); return; }
     let b=entryFor(date);
     if(!b){
       b={id:uid(), date, createdAt:Date.now(), plans:[plan], exercises:chosen, note};
@@ -696,6 +720,7 @@ function viewFootball(M,slug){
   $('#exlist').appendChild(rowEl);
   const doSave=async()=>{
     if(!ticked){ alert('Tick off the exercise to save it.'); return; }
+    const rerr=ratingError([x]); if(rerr){ alert(rerr); return; }
     const date=$('#fDate').value||todayStr();
     let b=entryFor(date);
     if(!b) b={id:uid(), date, createdAt:Date.now(), plans:[], exercises:[x], note:''};
@@ -748,6 +773,7 @@ function viewSingle(M,exId){
   $('#exlist').appendChild(rowEl);
   const doSave=async()=>{
     if(!ticked){ alert('Tick off the exercise to save it.'); return; }
+    const rerr=ratingError([x]); if(rerr){ alert(rerr); return; }
     const date=$('#fDate').value||todayStr();
     let b=entryFor(date);
     if(!b) b={id:uid(), date, createdAt:Date.now(), plans:[], exercises:[x], note:''};
@@ -770,7 +796,7 @@ function viewDetail(M,id){
   const rows=e.exercises.map(x=>{
     const hasVid=x.videoId||ytId(x.youtube);
     return `<tr><td>${esc(x.name)}${hasVid?' <button class="videobtn" data-v="'+esc(x.name)+'" style="width:26px;height:26px">'+ico('play',12)+'</button>':''}${x.skipped?'<br><span class="skiptag">SKIPPED</span>':''}</td>
-      <td class="num">${x.skipped?'—':(x.activity?(x.minutes!=null?x.minutes+' min':'—'):(x.hasWeight?esc(fmtW(x))+'<br>':'')+esc(fmtVol(x)))}</td></tr>`;
+      <td class="num">${x.skipped?'—':(x.activity?actCell(x):(x.hasWeight?esc(fmtW(x))+'<br>':'')+esc(fmtVol(x)))}</td></tr>`;
   }).join('');
   const prHtml=(e.prs&&e.prs.length)?'<div class="card">'+e.prs.map(p=>
     '<div class="prline">'+ico('trophy',16)+'<span>New PR — '+esc(p.name)+' '+p.weight+' kg</span></div>').join('')+'</div>':'';
@@ -805,6 +831,7 @@ function viewEditDay(M,id){
     }}));
   });
   const doSave=async()=>{
+    const rerr=ratingError(b.exercises); if(rerr){ alert(rerr); return; }
     const nd=$('#fDate').value||b.date;
     if(nd!==b.date&&entryFor(nd)){ alert('There is already a workout on '+fmtDate(nd)+'. Edit that day instead, or delete one of them.'); return; }
     b.date=nd;
