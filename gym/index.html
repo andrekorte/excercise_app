@@ -1028,12 +1028,21 @@ function progressSeries(){
   const map=new Map();
   const sorted=[...S.entries].sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
   for(const e of sorted) for(const x of e.exercises){
-    if(x.skipped||!x.hasWeight||x.weight==null) continue;
+    if(x.skipped) continue;
+    if(x.activity){ // rated activities (football games) trend their rating
+      if(x.rating==null) continue;
+      const key=x.name+' (rating)';
+      if(!map.has(key)){ const a=[]; a.unit='/10'; map.set(key,a); }
+      map.get(key).push({date:e.date, value:x.rating});
+      continue;
+    }
+    if(!x.hasWeight||x.weight==null) continue;
     if(!map.has(x.name)) map.set(x.name,[]);
     map.get(x.name).push({date:e.date, value:x.weight});
   }
-  // flag PRs: strictly above the running max, after the first point
+  // flag PRs on weight series only: strictly above the running max, after the first point
   for(const pts of map.values()){
+    if(pts.unit) continue;
     let max=-Infinity;
     pts.forEach((p,i)=>{ p.pr=i>0&&p.value>max; if(p.value>max)max=p.value; });
   }
@@ -1043,7 +1052,7 @@ function viewProgress(M,selRaw){
   setBar('Progress'); setTab('progress');
   const series=progressSeries();
   if(!series.size){
-    M.innerHTML='<p class="empty">Once workouts with weights are logged, weight progress per exercise shows up here.</p>';
+    M.innerHTML='<p class="empty">Once workouts with weights (or rated football games) are logged, progress shows up here.</p>';
     return;
   }
   const names=[...series.keys()];
@@ -1060,13 +1069,16 @@ function viewProgress(M,selRaw){
 }
 function chartBox(name,pts){
   const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative'; box.style.marginBottom='10px';
+  const rating=pts.unit==='/10';
+  const val=v=>rating?v+'/10':v+' kg';
   const latest=pts[pts.length-1].value, first=pts[0].value;
-  const delta=latest-first;
+  const delta=Math.round((latest-first)*100)/100;
   const prTotal=pts.filter(p=>p.pr).length;
-  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} workout${pts.length>1?'s':''} · latest ${latest} kg${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(Math.round(delta*100)/100)} kg since first`:''}${prTotal?' · '+prTotal+' PR'+(prTotal>1?'s':''):''}</div>`;
-  box.appendChild(buildChart(pts,'kg'));
+  const noun=rating?'game':'workout';
+  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} ${noun}${pts.length>1?'s':''} · latest ${val(latest)}${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(delta)} since first`:''}${prTotal?' · '+prTotal+' PR'+(prTotal>1?'s':''):''}</div>`;
+  box.appendChild(buildChart(pts,rating?'/10':'kg'));
   const dt=document.createElement('details'); dt.className='datatable';
-  dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th></th><th>kg</th></tr>'+
+  dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th></th><th>'+(rating?'rating':'kg')+'</th></tr>'+
     pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td><td>${p.pr?'PR':''}</td><td>${p.value}</td></tr>`).reverse().join('')+'</table>';
   box.appendChild(dt);
   return box;
@@ -1117,7 +1129,7 @@ function buildChart(pts,unit){
     for(let i=0;i<n;i++){ const d=Math.abs(X(i)-px); if(d<bd){bd=d;best=i;} }
     const p=pts[best];
     cross.setAttribute('x1',X(best)); cross.setAttribute('x2',X(best)); cross.setAttribute('opacity',1);
-    tip.textContent=fmtDate(p.date)+' · '+p.value+' '+unit+(p.pr?' · PR':'');
+    tip.textContent=fmtDate(p.date)+' · '+(unit==='/10'?p.value+'/10':p.value+' '+unit)+(p.pr?' · PR':'');
     tip.style.left=(X(best)/W*r.width)+'px';
     tip.style.top=(Y(p.value)/H*r.height)+'px';
     tip.style.opacity=1;
