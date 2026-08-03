@@ -25,6 +25,8 @@
   --tint-p-bg:#eceafa; --tint-p-ink:#4a3aa7;
   --tint-i-bg:#fbe7e6; --tint-i-ink:#a53730;
   --done:#0ca30c; --done-bg:#eaf7ea;
+  --tint-s-bg:#e2f4ec; --tint-s-ink:#0d7a52;
+  --tint-r-bg:#fdf3da; --tint-r-ink:#8a6100;
   --warn:#b98200; --warn-bg:#fdf3da;
   --shadow:0 1px 2px rgba(20,20,18,.05);
 }
@@ -39,6 +41,8 @@
     --tint-p-bg:#262043; --tint-p-ink:#aaa2ee;
     --tint-i-bg:#3a1c1b; --tint-i-ink:#e5837c;
     --done:#1db31d; --done-bg:#132b13;
+    --tint-s-bg:#132f26; --tint-s-ink:#57c9a0;
+    --tint-r-bg:#33290f; --tint-r-ink:#e0b34c;
     --warn:#e0b34c; --warn-bg:#33290f;
     --shadow:none;
   }
@@ -83,6 +87,8 @@ main{padding:16px; max-width:560px; margin:0 auto}
 .chip{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px; flex:none}
 .chip.physio{background:var(--tint-p-bg); color:var(--tint-p-ink)}
 .chip.injury{background:var(--tint-i-bg); color:var(--tint-i-ink)}
+.chip.swim{background:var(--tint-s-bg); color:var(--tint-s-ink)}
+.chip.run{background:var(--tint-r-bg); color:var(--tint-r-ink)}
 
 /* cards */
 .card{
@@ -109,6 +115,8 @@ main{padding:16px; max-width:560px; margin:0 auto}
 .badge.C{background:var(--tint-c-bg); color:var(--tint-c-ink)}
 .badge.physio{background:var(--tint-p-bg); color:var(--tint-p-ink)}
 .badge.injury{background:var(--tint-i-bg); color:var(--tint-i-ink)}
+.badge.swim{background:var(--tint-s-bg); color:var(--tint-s-ink)}
+.badge.run{background:var(--tint-r-bg); color:var(--tint-r-ink)}
 
 .weekline{color:var(--muted); font-size:13px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; margin:16px 2px 10px}
 .sectionlabel{font-size:12px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin:20px 2px 8px; display:flex; align-items:center; gap:7px}
@@ -412,6 +420,8 @@ const ICONS={
   note:'<path d="M4 4h16v13H9l-5 4z"/>',
   x:'<path d="M18 6 6 18M6 6l12 12"/>',
   check:'<path d="m5 13 4.5 4.5L19 7"/>',
+  waves:'<path d="M2 7.5c2.5-2 4.5 2 7 0s4.5-2 7 0 4.5 2 6 .5"/><path d="M2 13c2.5-2 4.5 2 7 0s4.5-2 7 0 4.5 2 6 .5"/><path d="M2 18.5c2.5-2 4.5 2 7 0s4.5-2 7 0 4.5 2 6 .5"/>',
+  run:'<circle cx="15.5" cy="4.2" r="1.9"/><path d="M13.5 21.5 15 15l-3.2-2.6.9-4.9 3.3 3.4 3 .8"/><path d="M12.7 7.5 9 8.8l-1 3.2M11.8 12.4 7 16l-2.5 5.5"/>',
 };
 const ico=(n,s=20,w=2)=>'<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+ICONS[n]+'</svg>';
 
@@ -472,6 +482,8 @@ function render(){
     if(parts[0]==='capture') return viewCapture(M,parts[1],null);
     if(parts[0]==='physio') return viewSimple(M,'physio',parts[1]||null);
     if(parts[0]==='injury') return viewSimple(M,'injury',parts[1]||null);
+    if(parts[0]==='run') return viewSimple(M,'run',parts[1]||null);
+    if(parts[0]==='swim') return viewSwim(M,parts[1]||null);
     if(parts[0]==='entry') return viewDetail(M,parts[1]);
     if(parts[0]==='editworkout') return viewCapture(M,null,parts[1]);
     if(parts[0]==='settings') return viewSettings(M);
@@ -488,12 +500,18 @@ function viewHome(M){
   M.innerHTML=`
     <button class="btn" id="bCap">${ico('plus',18)} Capture Workout</button>
     <div class="btnrow">
+      <button class="btn secondary" id="bSwim"><span class="chip swim">${ico('waves',15)}</span> Swimming</button>
+      <button class="btn secondary" id="bRun"><span class="chip run">${ico('run',15)}</span> Run</button>
+    </div>
+    <div class="btnrow">
       <button class="btn secondary" id="bPhy"><span class="chip physio">${ico('activity',15)}</span> Physio</button>
       <button class="btn secondary" id="bInj"><span class="chip injury">${ico('alert',15)}</span> Injury Break</button>
     </div>
     <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
     <div id="feed"></div>`;
   $('#bCap').onclick=()=>nav('capture');
+  $('#bSwim').onclick=()=>nav('swim');
+  $('#bRun').onclick=()=>nav('run');
   $('#bPhy').onclick=()=>nav('physio');
   $('#bInj').onclick=()=>nav('injury');
   const feed=$('#feed');
@@ -522,6 +540,12 @@ function viewHome(M){
     } else if(e.type==='physio'){
       badge='<span class="badge physio">'+ico('activity',15)+'</span>';
       sub='Physio · '+(e.comments?e.comments.split('\n')[0].slice(0,60):'appointment');
+    } else if(e.type==='swim'){
+      badge='<span class="badge swim">'+ico('waves',15)+'</span>';
+      sub='Swim · '+e.laps+' lap'+(e.laps===1?'':'s')+' · '+esc(e.style||'')+(e.comments?' · note':'');
+    } else if(e.type==='run'){
+      badge='<span class="badge run">'+ico('run',15)+'</span>';
+      sub='Run'+(e.comments?' · '+e.comments.split('\n')[0].slice(0,55):'');
     } else {
       badge='<span class="badge injury">'+ico('alert',15)+'</span>';
       sub='Injury break'+(e.comments?' · '+e.comments.split('\n')[0].slice(0,50):'');
@@ -681,24 +705,32 @@ function stepCtl(label,value,step,onChange){
   return d;
 }
 
-/* physio & injury forms (new or edit) */
+/* comment-only entries: physio, injury break, run (distance/pace live in Runkeeper) */
+const SIMPLE={
+  physio:{title:'Physio Appointment', short:'Physio', label:'Comments',
+    ph:'What was discussed, changes to the plan…'},
+  injury:{title:'Injury Break', short:'Injury Break', label:'What happened / how long?',
+    ph:'e.g. shoulder flared up, pausing for a week'},
+  run:{title:'Run', short:'Run', label:'Note (optional)',
+    ph:'e.g. easy 5k along the river — details in Runkeeper'},
+};
 function viewSimple(M,type,editId){
   setTab('home');
-  const isPhysio=type==='physio';
+  const cfg=SIMPLE[type]||SIMPLE.physio;
   let entry, isEdit=false;
   if(editId){
     const src=S.entries.find(x=>x.id===editId);
     if(!src){ M.innerHTML='<p class="empty">Entry not found.</p>'; setBar('Edit','home'); return; }
     entry=JSON.parse(JSON.stringify(src)); isEdit=true;
-    setBar(isPhysio?'Edit Physio':'Edit Injury Break','entry/'+editId);
+    setBar('Edit '+cfg.short,'entry/'+editId);
   } else {
     entry={id:uid(), type, date:todayStr(), createdAt:Date.now(), comments:''};
-    setBar(isPhysio?'Physio Appointment':'Injury Break','home');
+    setBar(cfg.title,'home');
   }
   M.innerHTML=`
     <div class="field"><label>Date</label><input type="date" id="fDate" value="${entry.date}"></div>
-    <div class="field"><label>${isPhysio?'Comments':'What happened / how long?'}</label>
-      <textarea id="fCom" placeholder="${isPhysio?'What was discussed, changes to the plan…':'e.g. shoulder flared up, pausing for a week'}">${esc(entry.comments)}</textarea></div>
+    <div class="field"><label>${esc(cfg.label)}</label>
+      <textarea id="fCom" placeholder="${esc(cfg.ph)}">${esc(entry.comments)}</textarea></div>
     <button class="btn" id="bSave">${isEdit?'Save Changes':'Save'}</button>`;
   const doSave=async()=>{
     entry.date=$('#fDate').value||todayStr();
@@ -707,7 +739,48 @@ function viewSimple(M,type,editId){
     toast('Saved');
     nav(isEdit?('entry/'+entry.id):'home');
   };
-  formBar(isPhysio?'Physio':'Injury Break', isEdit?('entry/'+entry.id):'home', doSave);
+  formBar(cfg.short, isEdit?('entry/'+entry.id):'home', doSave);
+  $('#bSave').onclick=doSave;
+}
+
+/* swimming: laps + stroke */
+const STROKES=['Freestyle','Breaststroke','Backstroke','Butterfly','Mixed'];
+function viewSwim(M,editId){
+  setTab('home');
+  let entry, isEdit=false;
+  if(editId){
+    const src=S.entries.find(x=>x.id===editId);
+    if(!src){ M.innerHTML='<p class="empty">Entry not found.</p>'; setBar('Edit','home'); return; }
+    entry=JSON.parse(JSON.stringify(src)); isEdit=true;
+    setBar('Edit Swim','entry/'+editId);
+  } else {
+    entry={id:uid(), type:'swim', date:todayStr(), createdAt:Date.now(),
+      laps:null, style:STROKES[0], comments:''};
+    setBar('Swimming','home');
+  }
+  M.innerHTML=`
+    <div class="field"><label>Date</label><input type="date" id="fDate" value="${entry.date}"></div>
+    <div class="field"><label>Laps</label><div id="lapCtl"></div></div>
+    <div class="field"><label>Style</label><select id="fStyle">${
+      STROKES.map(s=>`<option ${s===entry.style?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
+    <div class="field"><label>Note (optional)</label>
+      <textarea id="fCom" placeholder="e.g. shoulder felt good, no pain">${esc(entry.comments||'')}</textarea></div>
+    <button class="btn" id="bSave">${isEdit?'Save Changes':'Save'}</button>`;
+  const lc=stepCtl('',entry.laps,1,v=>{ entry.laps=v;
+    lc.querySelector('.stepper').classList.toggle('blankhl',v==null); },{blankable:true});
+  lc.querySelector('label').remove();
+  if(entry.laps==null) lc.querySelector('.stepper').classList.add('blankhl');
+  $('#lapCtl').appendChild(lc);
+  const doSave=async()=>{
+    if(entry.laps==null||entry.laps<=0){ alert('Enter how many laps you swam.'); return; }
+    entry.date=$('#fDate').value||todayStr();
+    entry.style=$('#fStyle').value;
+    entry.comments=$('#fCom').value.trim();
+    await saveEntry(entry);
+    toast('Swim saved');
+    nav(isEdit?('entry/'+entry.id):'home');
+  };
+  formBar('Swimming', isEdit?('entry/'+entry.id):'home', doSave);
   $('#bSave').onclick=doSave;
 }
 
@@ -730,12 +803,20 @@ function viewDetail(M,id){
       b.onclick=()=>{ const x=e.exercises.find(v=>v.name===b.dataset.v); if(x) openVideo(x); };
     });
     $('#bEdit').onclick=()=>nav('editworkout/'+e.id);
+  } else if(e.type==='swim'){
+    setBar('Swim · '+fmtDate(e.date),'home');
+    M.innerHTML=`<div class="card"><table class="dtl">
+        <tr><td>Laps</td><td class="num">${e.laps}</td></tr>
+        <tr><td>Style</td><td class="num">${esc(e.style||'—')}</td></tr></table></div>
+      ${e.comments?'<div class="card"><div class="cue" style="margin:0 0 4px">Note</div><div class="note-inline">'+esc(e.comments)+'</div></div>':''}
+      <div class="btnrow"><button class="btn secondary" id="bEdit">Edit</button><button class="btn danger" id="bDel">Delete</button></div>`;
+    $('#bEdit').onclick=()=>nav('swim/'+e.id);
   } else {
-    const isPhysio=e.type==='physio';
-    setBar((isPhysio?'Physio · ':'Injury Break · ')+fmtDate(e.date),'home');
+    const cfg=SIMPLE[e.type]||SIMPLE.injury;
+    setBar(cfg.short+' · '+fmtDate(e.date),'home');
     M.innerHTML=`<div class="card"><div class="note-inline">${esc(e.comments||'(no comments)')}</div></div>
       <div class="btnrow"><button class="btn secondary" id="bEdit">Edit</button><button class="btn danger" id="bDel">Delete</button></div>`;
-    $('#bEdit').onclick=()=>nav((isPhysio?'physio/':'injury/')+e.id);
+    $('#bEdit').onclick=()=>nav(e.type+'/'+e.id);
   }
   $('#bDel').onclick=async()=>{
     if(!confirm('Delete this entry? This cannot be undone.')) return;
@@ -884,6 +965,14 @@ function progressSeries(){
     if(!map.has(x.name)) map.set(x.name,[]);
     map.get(x.name).push({date:e.date, value:v, kind:x.load.kind});
   }
+  // swims trend their lap count
+  const swims=[...S.entries].filter(e=>e.type==='swim'&&e.laps!=null)
+    .sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
+  if(swims.length){
+    const a=[]; a.unit='laps';
+    swims.forEach(e=>a.push({date:e.date, value:e.laps}));
+    map.set('Swimming (laps)',a);
+  }
   return map;
 }
 function viewProgress(M,selRaw){
@@ -907,10 +996,11 @@ function viewProgress(M,selRaw){
 }
 function chartBox(name,pts){
   const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative'; box.style.marginBottom='10px';
-  const unit=pts[0].kind==='bandKg'?'kg band':'kg';
+  const unit=pts.unit?pts.unit:(pts[0].kind==='bandKg'?'kg band':'kg');
+  const noun=pts.unit==='laps'?'swim':'workout';
   const latest=pts[pts.length-1].value, first=pts[0].value;
-  const delta=latest-first;
-  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} workout${pts.length>1?'s':''} · latest ${latest} ${unit}${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(Math.round(delta*100)/100)} kg since first`:''}</div>`;
+  const delta=Math.round((latest-first)*100)/100;
+  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} ${noun}${pts.length>1?'s':''} · latest ${latest} ${unit}${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(delta)} since first`:''}</div>`;
   box.appendChild(buildChart(pts,unit));
   const dt=document.createElement('details'); dt.className='datatable';
   dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(unit)+'</th></tr>'+
