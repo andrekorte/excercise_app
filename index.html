@@ -150,6 +150,36 @@ textarea{min-height:96px; resize:vertical}
 @keyframes pop{0%{transform:scale(.7)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
 .exrow.done{background:var(--done-bg); box-shadow:inset 0 0 0 1.5px rgba(12,163,12,.4)}
 .exrow.skipped .donebtn{opacity:.3; pointer-events:none}
+.exrow.done .exbody{animation:doneflash .45s ease-out}
+@keyframes doneflash{0%{transform:scale(1)}35%{transform:scale(1.025)}100%{transform:scale(1)}}
+
+/* set-by-set tick off */
+.setbar{display:flex; align-items:center; gap:10px; margin-top:11px}
+.setmarks{display:flex; align-items:center; gap:6px; flex:1; min-height:18px}
+.setmark{width:15px; height:15px; border-radius:5px; display:block;
+  box-shadow:inset 0 0 0 1.5px var(--baseline); background:transparent; transition:background .15s}
+.setmark.on{background:var(--done); box-shadow:none}
+.setmark.on.pop{animation:markpop .32s cubic-bezier(.3,1.7,.55,1)}
+@keyframes markpop{0%{transform:scale(.4)}65%{transform:scale(1.35)}100%{transform:scale(1)}}
+.setbtn{border:0; border-radius:999px; padding:9px 16px; font-size:14px; font-weight:650; flex:none;
+  background:var(--done); color:#fff; cursor:pointer; font-family:inherit}
+.setbtn:active{filter:brightness(.9); transform:scale(.97)}
+.exrow.skipped .setbar{display:none}
+
+/* completion celebration */
+.extitle{position:relative}
+.burst{position:absolute; left:17px; top:50%; width:0; height:0; pointer-events:none; z-index:5}
+.burst i{position:absolute; left:0; top:0; width:7px; height:7px; border-radius:2px;
+  animation:fly .75s cubic-bezier(.2,.7,.3,1) forwards}
+@keyframes fly{
+  0%{transform:translate(0,0) scale(.5) rotate(0deg); opacity:1}
+  70%{opacity:1}
+  100%{transform:translate(var(--dx),var(--dy)) scale(1) rotate(220deg); opacity:0}
+}
+@media (prefers-reduced-motion: reduce){
+  .burst{display:none}
+  .setmark.on.pop,.exrow.done .exbody,.donebtn.on{animation:none}
+}
 .skipbtn{border:0; border-radius:999px; padding:6px 13px; font-size:13px; font-weight:600;
   background:var(--page); color:var(--ink-2); box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer; font-family:inherit}
 .skipbtn.on{background:var(--tint-i-bg); color:var(--tint-i-ink); box-shadow:none}
@@ -406,6 +436,24 @@ function ytId(url){
   const m=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?[^#]*v=|shorts\/|embed\/))([A-Za-z0-9_-]{6,20})/);
   return m?m[1]:null;
 }
+/* little confetti burst when an exercise is completed */
+function burst(row){
+  const host=row.querySelector('.extitle')||row;
+  const b=document.createElement('span'); b.className='burst';
+  const colors=['#0ca30c','#2a78d6','#eda100','#e87ba4','#1baf7a'];
+  for(let i=0;i<12;i++){
+    const p=document.createElement('i');
+    const ang=(Math.PI*2*i)/12+Math.random()*0.4, dist=26+Math.random()*22;
+    p.style.setProperty('--dx',(Math.cos(ang)*dist).toFixed(1)+'px');
+    p.style.setProperty('--dy',(Math.sin(ang)*dist).toFixed(1)+'px');
+    p.style.background=colors[i%colors.length];
+    p.style.animationDelay=(Math.random()*60).toFixed(0)+'ms';
+    b.appendChild(p);
+  }
+  host.appendChild(b);
+  setTimeout(()=>b.remove(),900);
+  if(navigator.vibrate) try{ navigator.vibrate(18); }catch(e){}
+}
 /* inline vector icons (stroke follows currentColor) */
 const ICONS={
   plus:'<path d="M12 5v14M5 12h14"/>',
@@ -617,12 +665,44 @@ function viewCapture(M,sessionKey,editId){
         ${isEdit?'<button class="skipbtn '+(x.skipped?'on':'')+'">'+(x.skipped?'Skipped':'Skip')+'</button>':''}
       </div>
       ${x.cue?'<div class="cue">'+esc(x.cue)+'</div>':''}
-      <div class="exbody"><div class="controls"></div></div>`;
+      <div class="exbody"><div class="controls"></div>
+        ${isEdit?'':'<div class="setbar"><span class="setmarks"></span><button class="setbtn">Set done</button></div>'}
+      </div>`;
     if(hasVid) row.querySelector('.videobtn').onclick=()=>openVideo(x);
     const doneB=row.querySelector('.donebtn');
+    const setB=row.querySelector('.setbtn'), marksEl=row.querySelector('.setmarks');
+    let sets=0; // sets ticked off so far — live workout state only, never saved
+    const target=()=>Math.max(1,Math.round(x.sets)||1);
+    const setDone=(on,celebrate)=>{
+      row.classList.toggle('done',on);
+      if(doneB) doneB.classList.toggle('on',on);
+      on?doneSet.add(x):doneSet.delete(x);
+      if(setB) setB.classList.toggle('hidden',on);
+      if(on&&celebrate) burst(row);
+      updateCount();
+    };
+    const renderMarks=()=>{
+      if(!marksEl) return;
+      const t=target(); if(sets>t) sets=t;
+      marksEl.innerHTML='';
+      for(let i=0;i<t;i++){
+        const d=document.createElement('i');
+        d.className='setmark'+(i<sets?' on':'');
+        if(i===sets-1) d.classList.add('pop');
+        marksEl.appendChild(d);
+      }
+      marksEl.title=sets+' of '+t+' sets';
+    };
     if(doneB) doneB.onclick=()=>{
-      const on=doneB.classList.toggle('on'); row.classList.toggle('done',on);
-      on?doneSet.add(x):doneSet.delete(x); updateCount(); };
+      const on=!row.classList.contains('done');
+      sets=on?target():0; renderMarks(); setDone(on,on);
+    };
+    if(setB) setB.onclick=()=>{
+      if(sets>=target()) return;
+      sets++; renderMarks();
+      if(sets>=target()) setDone(true,true);
+    };
+    renderMarks();
     const skipB=row.querySelector('.skipbtn');
     if(skipB) skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
       skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip';
@@ -636,7 +716,8 @@ function viewCapture(M,sessionKey,editId){
       c.innerHTML=`<label>Band</label><input type="text" value="${esc(x.load.value)}">`;
       c.querySelector('input').oninput=e=>x.load.value=e.target.value; ctls.appendChild(c);
     }
-    ctls.appendChild(stepCtl('Sets', x.sets, 1, v=>x.sets=v));
+    ctls.appendChild(stepCtl('Sets', x.sets, 1, v=>{ x.sets=v; renderMarks();
+      if(row.classList.contains('done')&&sets<target()) setDone(false,false); }));
     ctls.appendChild(stepCtl(x.mode==='secs'?'Hold (s)':'Reps', x.reps, 1, v=>x.reps=v));
     list.appendChild(row);
   };
