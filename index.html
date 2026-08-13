@@ -18,7 +18,7 @@
   color-scheme: light dark;
   --page:#f5f5f3; --surface:#ffffff; --ink:#1c1c1a; --ink-2:#52514e; --muted:#8a887f;
   --grid:#e7e6e0; --baseline:#c3c2b7; --ring:rgba(28,28,26,.09);
-  --accent:#2a78d6; --chart:#2a78d6; --danger:#b3372f;
+  --accent:#2a78d6; --chart:#2a78d6; --chart2:#eb6834; --danger:#b3372f;
   --tint-a-bg:#e8f0fb; --tint-a-ink:#1c5cab;
   --tint-b-bg:#fcebe2; --tint-b-ink:#b4441c;
   --tint-c-bg:#e2f4ec; --tint-c-ink:#0d7a52;
@@ -34,7 +34,7 @@
   :root{
     --page:#0e0e0d; --surface:#1a1a19; --ink:#f3f2ed; --ink-2:#c3c2b7; --muted:#8a887f;
     --grid:#2c2c2a; --baseline:#383835; --ring:rgba(255,255,255,.10);
-    --accent:#3987e5; --chart:#3987e5; --danger:#e5837c;
+    --accent:#3987e5; --chart:#3987e5; --chart2:#d95926; --danger:#e5837c;
     --tint-a-bg:#1c2a3d; --tint-a-ink:#86b6ef;
     --tint-b-bg:#392015; --tint-b-ink:#eb9a72;
     --tint-c-bg:#132f26; --tint-c-ink:#57c9a0;
@@ -228,6 +228,9 @@ nav.tabs a.active{color:var(--accent)}
 .viz-root{background:var(--surface); border-radius:14px; box-shadow:inset 0 0 0 1px var(--ring); padding:14px}
 .viz-root h3{margin:0 0 2px; font-size:15px}
 .viz-root .vsub{color:var(--muted); font-size:13px; margin-bottom:8px}
+.vlegend{display:flex; gap:14px; margin:0 0 6px; font-size:12px; color:var(--ink-2); font-weight:600}
+.vlegend span{display:inline-flex; align-items:center; gap:5px}
+.vlegend i{width:9px; height:9px; border-radius:3px; display:block}
 .viz-root svg{display:block; width:100%; height:auto; touch-action:pan-y}
 .viz-tip{position:absolute; pointer-events:none; background:var(--ink); color:var(--page);
   border-radius:8px; padding:5px 9px; font-size:12.5px; font-weight:650; white-space:nowrap;
@@ -1044,7 +1047,8 @@ function progressSeries(){
     if(!x.load||(x.load.kind!=='kg'&&x.load.kind!=='bandKg')) continue;
     const v=parseFloat(x.load.value); if(isNaN(v)) continue;
     if(!map.has(x.name)) map.set(x.name,[]);
-    map.get(x.name).push({date:e.date, value:v, kind:x.load.kind});
+    const reps=parseFloat(x.reps);
+    map.get(x.name).push({date:e.date, value:v, kind:x.load.kind, reps:isNaN(reps)?null:reps, mode:x.mode});
   }
   // swims trend their lap count
   const swims=[...S.entries].filter(e=>e.type==='swim'&&e.laps!=null)
@@ -1079,50 +1083,81 @@ function chartBox(name,pts){
   const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative'; box.style.marginBottom='10px';
   const unit=pts.unit?pts.unit:(pts[0].kind==='bandKg'?'kg band':'kg');
   const noun=pts.unit==='laps'?'swim':'workout';
-  const latest=pts[pts.length-1].value, first=pts[0].value;
-  const delta=Math.round((latest-first)*100)/100;
-  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} ${noun}${pts.length>1?'s':''} · latest ${latest} ${unit}${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(delta)} since first`:''}</div>`;
-  box.appendChild(buildChart(pts,unit));
+  /* weight series also plot reps on their own right-hand axis */
+  const dual=!pts.unit&&pts.some(p=>p.reps!=null);
+  const repLabel=pts[0].mode==='secs'?'sec':'reps';
+  const latest=pts[pts.length-1], first=pts[0];
+  const delta=Math.round((latest.value-first.value)*100)/100;
+  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} ${noun}${pts.length>1?'s':''} · latest ${latest.value} ${unit}${
+    dual&&latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(delta)} since first`:''}</div>`;
+  if(dual) box.insertAdjacentHTML('beforeend',
+    `<div class="vlegend"><span><i style="background:var(--chart)"></i>${esc(unit)}</span>`+
+    `<span><i style="background:var(--chart2)"></i>${esc(repLabel)}</span></div>`);
+  box.appendChild(buildChart(pts,unit,dual?repLabel:null));
   const dt=document.createElement('details'); dt.className='datatable';
-  dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(unit)+'</th></tr>'+
-    pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td><td>${p.value}</td></tr>`).reverse().join('')+'</table>';
+  dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(unit)+'</th>'+
+    (dual?'<th>'+esc(repLabel)+'</th>':'')+'</tr>'+
+    pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td><td>${p.value}</td>${dual?'<td>'+(p.reps==null?'—':p.reps)+'</td>':''}</tr>`).reverse().join('')+'</table>';
   box.appendChild(dt);
   return box;
 }
-function buildChart(pts,unit){
-  const W=520,H=260,padL=40,padR=14,padT=14,padB=30;
-  const xs=pts.map((p,i)=>i), n=pts.length;
-  let vmin=Math.min(...pts.map(p=>p.value)), vmax=Math.max(...pts.map(p=>p.value));
-  if(vmin===vmax){ vmin=Math.max(0,vmin-1); vmax=vmax+1; }
-  const span=vmax-vmin; vmin=Math.max(0,vmin-span*0.15); vmax=vmax+span*0.15;
+/* round an axis to clean tick values with a fixed number of intervals,
+   so the left (weight) and right (reps) axes can share gridlines */
+function niceAxis(vals,intervals){
+  let mn=Math.min(...vals), mx=Math.max(...vals);
+  if(mn===mx){ mn-=1; mx+=1; }                       // a flat line sits mid-plot
+  else { const s=mx-mn; mn-=s*0.18; mx+=s*0.18; }    // breathing room
+  if(mn<0&&Math.min(...vals)>=0) mn=0;
+  const steps=[0.1,0.25,0.5,1,2,2.5,5,10,20,25,50,100,200,250,500];
+  for(const step of steps){
+    const lo=Math.floor(mn/step)*step, hi=lo+step*intervals;
+    if(hi>=mx) return {lo,hi,step,
+      ticks:Array.from({length:intervals+1},(_,i)=>Math.round((lo+i*step)*100)/100)};
+  }
+  return {lo:mn,hi:mx,step:(mx-mn)/intervals,
+    ticks:Array.from({length:intervals+1},(_,i)=>Math.round((mn+i*(mx-mn)/intervals)*100)/100)};
+}
+function buildChart(pts,unit,repLabel){
+  const dual=!!repLabel&&pts.some(p=>p.reps!=null);
+  const W=520,H=262,padL=40,padR=dual?40:14,padT=16,padB=30,INT=3;
+  const n=pts.length;
+  const A=niceAxis(pts.map(p=>p.value),INT);
+  const B=dual?niceAxis(pts.filter(p=>p.reps!=null).map(p=>p.reps),INT):null;
   const X=i=> n===1 ? (padL+(W-padL-padR)/2) : padL+(W-padL-padR)*(i/(n-1));
-  const Y=v=> padT+(H-padT-padB)*(1-(v-vmin)/(vmax-vmin));
+  const yOf=(v,ax)=> padT+(H-padT-padB)*(1-(v-ax.lo)/(ax.hi-ax.lo));
+  const Y=v=>yOf(v,A), Y2=v=>yOf(v,B);
   const svgNS='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(svgNS,'svg');
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   svg.setAttribute('role','img');
-  svg.setAttribute('aria-label','Weight over time');
+  svg.setAttribute('aria-label',dual?'Weight and reps over time':'Progress over time');
   const mk=(tag,attrs)=>{ const el=document.createElementNS(svgNS,tag); for(const k in attrs) el.setAttribute(k,attrs[k]); return el; };
-  // gridlines: 3 horizontal
-  const ticks=[vmin+(vmax-vmin)*0.1, (vmin+vmax)/2, vmax-(vmax-vmin)*0.1].map(v=>Math.round(v*2)/2);
-  for(const tv of [...new Set(ticks)]){
-    svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:Y(tv),y2:Y(tv),stroke:'var(--grid)','stroke-width':1}));
-    const t=mk('text',{x:padL-6,y:Y(tv)+4,'text-anchor':'end','font-size':11,fill:'var(--muted)','font-family':'inherit'});
-    t.textContent=tv; svg.appendChild(t);
-  }
-  // baseline
+  const txt=(x,y,s,anchor,fill)=>{ const t=mk('text',{x,y,'text-anchor':anchor,'font-size':11,
+    fill,'font-family':'inherit'}); t.textContent=s; return t; };
+  // gridlines with a label on each axis
+  A.ticks.forEach((tv,i)=>{
+    const y=yOf(tv,A);
+    svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:y,y2:y,stroke:'var(--grid)','stroke-width':1}));
+    svg.appendChild(txt(padL-6,y+4,tv,'end',dual?'var(--chart)':'var(--muted)'));
+    if(dual) svg.appendChild(txt(W-padR+6,y+4,B.ticks[i],'start','var(--chart2)'));
+  });
   svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:H-padB,y2:H-padB,stroke:'var(--baseline)','stroke-width':1}));
   // x labels: first & last date
-  const xl=mk('text',{x:X(0),y:H-10,'text-anchor':n===1?'middle':'start','font-size':11,fill:'var(--muted)','font-family':'inherit'});
-  xl.textContent=fmtDate(pts[0].date); svg.appendChild(xl);
-  if(n>1){ const xr=mk('text',{x:X(n-1),y:H-10,'text-anchor':'end','font-size':11,fill:'var(--muted)','font-family':'inherit'});
-    xr.textContent=fmtDate(pts[n-1].date); svg.appendChild(xr); }
-  // line
-  if(n>1){
-    const d=pts.map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.value)).join(' ');
-    svg.appendChild(mk('path',{d,fill:'none',stroke:'var(--chart)','stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
+  svg.appendChild(txt(X(0),H-10,fmtDate(pts[0].date),n===1?'middle':'start','var(--muted)'));
+  if(n>1) svg.appendChild(txt(X(n-1),H-10,fmtDate(pts[n-1].date),'end','var(--muted)'));
+  // reps line first so weight reads on top
+  if(dual){
+    const rp=pts.map((p,i)=>({i,v:p.reps})).filter(o=>o.v!=null);
+    if(rp.length>1) svg.appendChild(mk('path',{d:rp.map((o,k)=>(k?'L':'M')+X(o.i)+' '+Y2(o.v)).join(' '),
+      fill:'none',stroke:'var(--chart2)','stroke-width':2,'stroke-dasharray':'5 4',
+      'stroke-linejoin':'round','stroke-linecap':'round'}));
+    rp.forEach(o=>{
+      svg.appendChild(mk('circle',{cx:X(o.i),cy:Y2(o.v),r:5,fill:'var(--surface)'}));
+      svg.appendChild(mk('circle',{cx:X(o.i),cy:Y2(o.v),r:3.5,fill:'var(--chart2)'}));
+    });
   }
-  // markers (8px = r4) with surface ring
+  if(n>1) svg.appendChild(mk('path',{d:pts.map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.value)).join(' '),
+    fill:'none',stroke:'var(--chart)','stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
   pts.forEach((p,i)=>{
     svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.value),r:5,fill:'var(--surface)'}));
     svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.value),r:4,fill:'var(--chart)'}));
@@ -1140,7 +1175,8 @@ function buildChart(pts,unit){
     for(let i=0;i<n;i++){ const d=Math.abs(X(i)-px); if(d<bd){bd=d;best=i;} }
     const p=pts[best];
     cross.setAttribute('x1',X(best)); cross.setAttribute('x2',X(best)); cross.setAttribute('opacity',1);
-    tip.textContent=fmtDate(p.date)+' · '+p.value+' '+unit;
+    tip.textContent=fmtDate(p.date)+' · '+p.value+' '+unit+
+      (dual&&p.reps!=null?' · '+p.reps+' '+repLabel:'');
     tip.style.left=(X(best)/W*r.width)+'px';
     tip.style.top=(Y(p.value)/H*r.height)+'px';
     tip.style.opacity=1;
