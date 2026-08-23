@@ -770,6 +770,16 @@ function viewCapture(M,sessionKey,editId){
       if(note) b.note=b.note?b.note+'\n'+note:note;
     }
     await saveEntry(b);
+    /* what you actually did becomes the default for next time */
+    let tchanged=false;
+    for(const r of chosen) for(const k of ['A','B','C']){
+      const te=S.templates[k]&&S.templates[k].exercises.find(x=>x.name===r.name);
+      if(!te) continue;
+      if(JSON.stringify(te.load)!==JSON.stringify(r.load)){ te.load=JSON.parse(JSON.stringify(r.load)); tchanged=true; }
+      if(te.sets!==r.sets){ te.sets=r.sets; tchanged=true; }
+      if(te.reps!==r.reps){ te.reps=r.reps; tchanged=true; }
+    }
+    if(tchanged) await saveTemplates();
     toast('Workout saved');
     nav('home');
   };
