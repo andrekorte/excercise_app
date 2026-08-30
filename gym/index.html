@@ -340,6 +340,19 @@ async function loadState(){
   S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
 }
 const saveTemplates=()=>kvSet('templates',S.t);
+/* what was actually done becomes the default for next time (weight, sets, reps) */
+async function syncDefaults(rows){
+  let changed=false;
+  for(const r of rows){
+    if(r.activity) continue;
+    const te=S.t.exercises.find(x=>x.name===r.name);
+    if(!te) continue;
+    if(te.weight!==r.weight){ te.weight=r.weight; changed=true; }
+    if(te.sets!==r.sets){ te.sets=r.sets; changed=true; }
+    if(te.reps!==r.reps){ te.reps=r.reps; changed=true; }
+  }
+  if(changed) await saveTemplates();
+}
 async function saveEntry(e){ await entryPut(e);
   S.entries=S.entries.filter(x=>x.id!==e.id).concat([e]).sort((a,b)=>(b.date.localeCompare(a.date))||(b.createdAt-a.createdAt)); }
 async function deleteEntry(id){
@@ -687,6 +700,7 @@ function viewCapture(M,plan){
     maybeAddBike(b);
     computePRs(b);
     await saveEntry(b);
+    await syncDefaults(chosen);
     if(!prToast(b)) toast('Workout saved');
     nav('home');
   };
@@ -781,6 +795,7 @@ function viewSingle(M,exId){
     else b.exercises.push(x);
     computePRs(b);
     await saveEntry(b);
+    await syncDefaults([x]);
     if(!prToast(b)) toast(e.name+' added to '+fmtDate(date));
     nav('home');
   };
