@@ -1,5 +1,5 @@
 /* Shoulder Trainer service worker — cache-first app shell for offline use. */
-const VERSION = 'v15';
+const VERSION = 'v16';
 const CACHE = 'shoulder-trainer-' + VERSION;
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
