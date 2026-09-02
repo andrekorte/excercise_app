@@ -1446,6 +1446,69 @@ function reportText(m){
 const fmtFull=iso=>{ const [y,mo,d]=iso.split('-').map(Number);
   return new Date(y,mo-1,d).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}); };
 
+/* Mail clients drop <style> blocks, so the pasteable version inlines every rule */
+function reportEmailHTML(m){
+  const F='font-family:-apple-system,Helvetica,Arial,sans-serif';
+  const H2=`${F};font-size:16px;font-weight:700;margin:22px 0 8px;color:#12181a`;
+  const TB=`border-collapse:collapse;width:100%;${F};font-size:13px;margin-bottom:6px`;
+  const TH='text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#71827e;'+
+    'border-bottom:1px solid #c3cfcc;padding:5px 10px 5px 0';
+  const TD='padding:5px 10px 5px 0;border-bottom:1px solid #e4e9e8;vertical-align:top';
+  const NUM=TD+';white-space:nowrap;font-variant-numeric:tabular-nums';
+  const P=[];
+  const table=(heads,rows,numFrom)=>{
+    P.push(`<table style="${TB}"><thead><tr>`);
+    heads.forEach(h=>P.push(`<th style="${TH}">${esc(h)}</th>`));
+    P.push('</tr></thead><tbody>');
+    rows.forEach(r=>{
+      P.push('<tr>');
+      r.forEach((c,i)=>P.push(`<td style="${i>=numFrom?NUM:TD}">${esc(String(c==null?'':c))}</td>`));
+      P.push('</tr>');
+    });
+    P.push('</tbody></table>');
+  };
+  P.push(`<div style="${F};font-size:14px;color:#12181a;line-height:1.5">`);
+  P.push(`<div style="${F};font-size:19px;font-weight:700">Shoulder rehabilitation — progress report</div>`);
+  P.push(`<div style="color:#43524f;font-size:13px;margin-top:4px">${esc(fmtFull(m.from))} – ${esc(fmtFull(m.to))}
+    · ${m.workouts.length} sessions (${m.perWeek.toFixed(1)}/week) · ${m.raised} loads increased
+    · ${m.painDays} day${m.painDays===1?'':'s'} off with pain</div>`);
+
+  P.push(`<div style="${H2}">1 · Current programme</div>`);
+  for(const k of ['A','B','C']){
+    const t=S.templates[k]; if(!t) continue;
+    P.push(`<div style="${F};font-size:13px;font-weight:700;margin:12px 0 4px">${esc(t.name)}</div>`);
+    table(['Exercise','Load','Sets × reps','Cue'],
+      t.exercises.map(x=>[x.name,fmtLoad(x.load),fmtVol(x),x.cue||'']),1);
+  }
+  P.push(`<div style="${H2}">2 · Session log</div>`);
+  table(['Date','Type','Content','Notes'],
+    m.all.map(e=>[e.date,entryLabel(e),entryContent(e),(e.note||e.comments||'').replace(/\n/g,' · ')]),0);
+
+  P.push(`<div style="${H2}">3 · Load progression</div>`);
+  table(['Exercise','First load','First sets × reps','Latest load','Latest sets × reps','Sessions'],
+    m.prog.map(r=>[r.name,r.first.load,r.first.vol,r.latest.load,r.latest.vol,r.count]),1);
+
+  P.push(`<div style="${H2}">4 · Full data · ${m.rows.length} rows</div>`);
+  table(['Date','Session','Exercise','Load','Sets','Reps'],m.rows,3);
+
+  P.push(`<div style="color:#71827e;font-size:12px;margin-top:18px">Every figure was entered in the
+    Shoulder Trainer app at the time of the session. Progress charts are in the PDF version.</div>`);
+  P.push('</div>');
+  return P.join('');
+}
+/* copy formatted + plain versions together so Mail pastes tables and Excel pastes columns */
+function copyRich(html,text){
+  try{
+    if(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write){
+      navigator.clipboard.write([new ClipboardItem({
+        'text/html':new Blob([html],{type:'text/html'}),
+        'text/plain':new Blob([text],{type:'text/plain'})
+      })]).catch(()=>copySync(text));
+      return true;
+    }
+  }catch(e){}
+  return copySync(text);
+}
 function copySync(text){
   try{
     const ta=document.createElement('textarea');
@@ -1483,9 +1546,9 @@ function viewReport(M){
       <button class="btn secondary" id="bAddr">Change address</button>
     </div>
     <p class="cue" id="addrLine" style="margin:2px 2px 2px">No address saved yet</p>
-    <p class="cue" style="margin:8px 2px 24px"><b>Email report</b> opens Mail with the full report —
-      tables tab-separated, ready to paste into Excel. <b>Save as PDF</b> opens the print sheet for the
-      formatted version with charts, which you can attach or share from there.</p>`;
+    <p class="cue" style="margin:8px 2px 24px"><b>Email report</b> copies the report as formatted tables
+      and opens Mail — long-press in the message and Paste. The tables keep their layout in Mail and still
+      paste into Excel as columns. <b>Save as PDF</b> opens the print sheet for the full version with charts.</p>`;
   $('#rprev').srcdoc=html;
   const subject='Shoulder rehab progress report — '+fmtFull(m.from)+' to '+fmtFull(m.to);
   const promptAddr=()=>{
@@ -1497,14 +1560,12 @@ function viewReport(M){
   };
   $('#bMail').onclick=()=>{
     if(!addr){ if(!promptAddr()) return; toast('Address saved — tap Email report to send'); return; }
-    const body=reportText(m);
-    const head='mailto:'+encodeURIComponent(addr)+'?subject='+encodeURIComponent(subject);
-    if(body.length<MAILTO_SAFE){ openMail(head+'&body='+encodeURIComponent(body)); return; }
-    /* too long for a mail link: put it on the clipboard and open an empty draft to paste into */
-    copySync(body);
+    /* formatted tables on the clipboard, plain text as the fallback flavour */
+    copyRich(reportEmailHTML(m),reportText(m));
     toast('Report copied — paste it into the email');
+    const head='mailto:'+encodeURIComponent(addr)+'?subject='+encodeURIComponent(subject);
     setTimeout(()=>{ openMail(head+'&body='+
-      encodeURIComponent('Hi,\n\nMy shoulder rehab progress report:\n\n[paste here]\n\nThanks')); },900);
+      encodeURIComponent('Hi,\n\nMy shoulder rehab progress report is below.\n\n')); },900);
   };
   $('#bPrint').onclick=()=>{
     const f=$('#rprev');
