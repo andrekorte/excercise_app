@@ -1440,72 +1440,82 @@ function reportText(m){
   L.push(tab(['Date','Session','Exercise','Load','Sets','Reps']));
   for(const r of m.rows) L.push(tab(r));
   L.push('');
-  L.push('Charts are in the attached report file (open in any browser).');
+  L.push('Charts and the formatted layout are in the PDF version, sent separately from the app.');
   return L.join('\n');
 }
 const fmtFull=iso=>{ const [y,mo,d]=iso.split('-').map(Number);
   return new Date(y,mo-1,d).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}); };
 
-async function askEmail(force){
-  let a=await kvGet('physioEmail');
-  if(!a||force){
-    a=prompt('Send report to which email address?', a||'');
-    if(a==null) return null;
-    a=a.trim();
-    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a)){ alert('That doesn’t look like an email address.'); return null; }
-    await kvSet('physioEmail',a);
+function copySync(text){
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=text; ta.setAttribute('readonly','');
+    ta.style.cssText='position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select(); ta.setSelectionRange(0,text.length);
+    const ok=document.execCommand('copy');
+    ta.remove();
+    if(!ok&&navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});
+    return true;
+  }catch(e){
+    if(navigator.clipboard){ navigator.clipboard.writeText(text).catch(()=>{}); return true; }
+    return false;
   }
-  return a;
 }
+const MAILTO_SAFE=1400;   /* iOS truncates long mailto bodies */
+function openMail(url){ location.href=url; }
 function viewReport(M){
   setTab('settings'); setBar('Report for physio','settings');
   const m=reportModel();
   if(!m.all.length){ M.innerHTML='<p class="empty">Nothing logged yet — the report needs at least one session.</p>'; return; }
   const html=reportHTML(m);
+  let addr=null;                     /* cached so sending stays inside the tap */
+  kvGet('physioEmail').then(v=>{ addr=v||null; const el=$('#addrLine'); if(el&&addr) el.textContent='Sends to '+addr; });
   M.innerHTML=`
     <div class="card"><div class="cardsub" style="color:var(--ink)">
       <b>${m.workouts.length} sessions</b> · ${esc(fmtFull(m.from))} – ${esc(fmtFull(m.to))}<br>
       Programme, session log, load progression, charts and ${m.rows.length} rows of full data.</div></div>
-    <iframe id="rprev" title="Report preview" style="width:100%;height:52vh;border:0;border-radius:12px;
+    <iframe id="rprev" title="Report preview" style="width:100%;height:50vh;border:0;border-radius:12px;
       box-shadow:inset 0 0 0 1px var(--ring);background:#fff"></iframe>
     <button class="btn" id="bMail" style="margin-top:14px">Email report</button>
     <div class="btnrow">
-      <button class="btn secondary" id="bText">Email as text</button>
+      <button class="btn secondary" id="bPrint">Save as PDF</button>
       <button class="btn secondary" id="bAddr">Change address</button>
     </div>
-    <p class="cue" style="margin:2px 2px 24px">The formatted report travels as an attachment your physio
-      opens in any browser. iOS can’t pre-fill the address on an attachment, so it’s copied ready to paste.</p>`;
+    <p class="cue" id="addrLine" style="margin:2px 2px 2px">No address saved yet</p>
+    <p class="cue" style="margin:8px 2px 24px"><b>Email report</b> opens Mail with the full report —
+      tables tab-separated, ready to paste into Excel. <b>Save as PDF</b> opens the print sheet for the
+      formatted version with charts, which you can attach or share from there.</p>`;
   $('#rprev').srcdoc=html;
-  const file=()=>new File([html],'shoulder-report-'+todayStr()+'.html',{type:'text/html'});
-  $('#bMail').onclick=async()=>{
-    const addr=await askEmail(false); if(!addr) return;
-    const f=file();
-    try{ await navigator.clipboard.writeText(addr); }catch(e){}
-    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[f]})){
-      toast('Address copied — paste into To:');
-      try{ await navigator.share({files:[f],title:'Shoulder rehab progress report'}); }
-      catch(e){ if(e.name!=='AbortError') alert('Could not open the share sheet.'); }
-    } else {
-      const a=document.createElement('a'); a.href=URL.createObjectURL(f); a.download=f.name;
-      document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);
-      location.href='mailto:'+encodeURIComponent(addr)+'?subject='+
-        encodeURIComponent('Shoulder rehab progress report — '+fmtFull(m.from)+' to '+fmtFull(m.to))+
-        '&body='+encodeURIComponent('Hi,\n\nMy shoulder rehab progress report is attached (open in any browser).\n\nThanks');
-    }
+  const subject='Shoulder rehab progress report — '+fmtFull(m.from)+' to '+fmtFull(m.to);
+  const promptAddr=()=>{
+    const a=(prompt('Send the report to which email address?', addr||'')||'').trim();
+    if(!a) return null;
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a)){ alert('That doesn’t look like an email address.'); return null; }
+    addr=a; kvSet('physioEmail',a); const el=$('#addrLine'); if(el) el.textContent='Sends to '+a;
+    return a;
   };
-  $('#bText').onclick=async()=>{
-    const addr=await askEmail(false); if(!addr) return;
+  $('#bMail').onclick=()=>{
+    if(!addr){ if(!promptAddr()) return; toast('Address saved — tap Email report to send'); return; }
     const body=reportText(m);
-    const subj='Shoulder rehab progress report — '+fmtFull(m.from)+' to '+fmtFull(m.to);
-    if(body.length<1400){
-      location.href='mailto:'+encodeURIComponent(addr)+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);
-    } else {
-      try{ await navigator.clipboard.writeText(body); toast('Report copied — paste into the email'); }
-      catch(e){ alert('Could not copy the report.'); return; }
-      setTimeout(()=>{ location.href='mailto:'+encodeURIComponent(addr)+'?subject='+encodeURIComponent(subj); },700);
+    const head='mailto:'+encodeURIComponent(addr)+'?subject='+encodeURIComponent(subject);
+    if(body.length<MAILTO_SAFE){ openMail(head+'&body='+encodeURIComponent(body)); return; }
+    /* too long for a mail link: put it on the clipboard and open an empty draft to paste into */
+    copySync(body);
+    toast('Report copied — paste it into the email');
+    setTimeout(()=>{ openMail(head+'&body='+
+      encodeURIComponent('Hi,\n\nMy shoulder rehab progress report:\n\n[paste here]\n\nThanks')); },900);
+  };
+  $('#bPrint').onclick=()=>{
+    const f=$('#rprev');
+    try{ f.contentWindow.focus(); f.contentWindow.print(); }
+    catch(e){
+      const w=window.open('','_blank');
+      if(w){ w.document.write(html); w.document.close(); setTimeout(()=>w.print(),400); }
+      else alert('Could not open the print view.');
     }
   };
-  $('#bAddr').onclick=()=>askEmail(true).then(a=>{ if(a) toast('Saved '+a); });
+  $('#bAddr').onclick=()=>{ if(promptAddr()) toast('Saved '+addr); };
 }
 
 /* ============ export / import ============ */
