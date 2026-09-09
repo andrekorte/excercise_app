@@ -344,7 +344,7 @@ const saveTemplates=()=>kvSet('templates',S.t);
 async function syncDefaults(rows){
   let changed=false;
   for(const r of rows){
-    if(r.activity) continue;
+    if(r.activity||r.skipped) continue;
     const te=S.t.exercises.find(x=>x.name===r.name);
     if(!te) continue;
     if(te.weight!==r.weight){ te.weight=r.weight; changed=true; }
@@ -360,6 +360,8 @@ async function deleteEntry(id){
 }
 const dayList=plan=>S.t.exercises.filter(e=>plan==='D1'?e.d1:e.d2);
 const entryFor=date=>S.entries.find(e=>e.date===date);
+/* newest day on record — editing that one still counts as "what I last did" */
+const latestEntryDate=()=>S.entries.reduce((m,e)=>e.date>m?e.date:m,'');
 
 /* snapshot row from a template exercise */
 function rowFrom(e,partOfPlan){
@@ -858,6 +860,8 @@ function viewEditDay(M,id){
     }
     computePRs(b);
     await saveEntry(b);
+    /* edits to the latest day update the defaults too; older days stay history */
+    if(b.date>=latestEntryDate()) await syncDefaults(b.exercises);
     toast('Updated');
     nav('entry/'+id);
   };
