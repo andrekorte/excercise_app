@@ -361,6 +361,25 @@ async function seedHistory(){
   await kvSet('seedHistoryV1',true);
 }
 const saveTemplates=()=>kvSet('templates',S.templates);
+/* what was actually done becomes the default for next time */
+async function syncDefaults(rows){
+  let changed=false;
+  for(const r of rows){
+    if(r.skipped) continue;
+    for(const k of ['A','B','C']){
+      const te=S.templates[k]&&S.templates[k].exercises.find(x=>x.name===r.name);
+      if(!te) continue;
+      if(JSON.stringify(te.load)!==JSON.stringify(r.load)){ te.load=JSON.parse(JSON.stringify(r.load)); changed=true; }
+      if(te.sets!==r.sets){ te.sets=r.sets; changed=true; }
+      if(te.reps!==r.reps){ te.reps=r.reps; changed=true; }
+    }
+  }
+  if(changed) await saveTemplates();
+}
+/* newest workout day on record — editing that one still counts as "what I last did" */
+const latestWorkoutDate=()=>S.entries.filter(e=>e.type==='workout')
+  .reduce((m,e)=>e.date>m?e.date:m,'');
+
 async function saveEntry(e){ await entryPut(e);
   S.entries=S.entries.filter(x=>x.id!==e.id).concat([e]).sort((a,b)=>(b.date.localeCompare(a.date))||(b.createdAt-a.createdAt)); }
 /* combine several workout entries logged on the same date into one */
@@ -743,6 +762,8 @@ function viewCapture(M,sessionKey,editId){
     if(isEdit){
       entry.date=date; entry.note=note;
       await saveEntry(entry);
+      /* edits to the latest day update the defaults too; older days stay history */
+      if(entry.date>=latestWorkoutDate()) await syncDefaults(entry.exercises);
       toast('Workout updated'); nav('entry/'+entry.id); return;
     }
     /* only ticked-off exercises make it into the day */
@@ -763,16 +784,7 @@ function viewCapture(M,sessionKey,editId){
       if(note) b.note=b.note?b.note+'\n'+note:note;
     }
     await saveEntry(b);
-    /* what you actually did becomes the default for next time */
-    let tchanged=false;
-    for(const r of chosen) for(const k of ['A','B','C']){
-      const te=S.templates[k]&&S.templates[k].exercises.find(x=>x.name===r.name);
-      if(!te) continue;
-      if(JSON.stringify(te.load)!==JSON.stringify(r.load)){ te.load=JSON.parse(JSON.stringify(r.load)); tchanged=true; }
-      if(te.sets!==r.sets){ te.sets=r.sets; tchanged=true; }
-      if(te.reps!==r.reps){ te.reps=r.reps; tchanged=true; }
-    }
-    if(tchanged) await saveTemplates();
+    await syncDefaults(chosen);
     toast('Workout saved');
     nav('home');
   };
