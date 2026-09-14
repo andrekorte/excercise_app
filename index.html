@@ -177,6 +177,11 @@ textarea{min-height:96px; resize:vertical}
   background:var(--surface); box-shadow:inset 0 0 0 1px var(--ring), var(--shadow); padding:16px; margin-bottom:12px;
   cursor:pointer; text-align:left; font-family:inherit; color:var(--ink)}
 .pickbtn .badge{min-width:42px; height:42px; font-size:19px; border-radius:12px}
+.pickbtn.planned{box-shadow:inset 0 0 0 2px var(--accent), var(--shadow)}
+.pickmain{min-width:0}
+.todaytag{display:inline-block; margin-left:8px; vertical-align:2px; font-size:10.5px; font-weight:700;
+  letter-spacing:.06em; text-transform:uppercase; color:#fff; background:var(--accent);
+  border-radius:999px; padding:2px 8px}
 .pickbtn .pickname{font-size:17px; font-weight:700}
 .pickbtn .picksub{font-size:13px; color:var(--muted)}
 
@@ -650,13 +655,17 @@ function viewHome(M){
 
 function viewPick(M){
   setBar('Capture Workout','home'); setTab('home');
+  const planned=S.plan?S.plan[todayIdx()]:null;   /* the session this day is scheduled for */
   for(const k of ['A','B','C']){
     const t=S.templates[k];
-    const b=document.createElement('button'); b.className='pickbtn';
-    b.innerHTML=`<span class="badge ${k}">${k}</span><span><span class="pickname">${esc(t.name)}</span><br><span class="picksub">${t.exercises.length} exercises · ${esc(t.exercises.map(e=>e.name.split(' ')[0]).slice(0,3).join(', '))}${t.exercises.length>3?'…':''}</span></span>`;
+    const b=document.createElement('button'); b.className='pickbtn'+(k===planned?' planned':'');
+    b.innerHTML=`<span class="badge ${k}">${k}</span><span class="pickmain"><span class="pickname">${esc(t.name)}</span>${
+      k===planned?'<span class="todaytag">Today</span>':''}<br><span class="picksub">${t.exercises.length} exercises · ${esc(t.exercises.map(e=>e.name.split(' ')[0]).slice(0,3).join(', '))}${t.exercises.length>3?'…':''}</span></span>`;
     b.onclick=()=>nav('capture/'+k);
     M.appendChild(b);
   }
+  if(planned) M.insertAdjacentHTML('beforeend',
+    `<p class="cue" style="margin:6px 2px 0">${esc(S.templates[planned].name)} is scheduled for today — any session can still be captured.</p>`);
 }
 
 /* Capture new (sessionKey set) or edit existing workout (editId set) */
