@@ -994,6 +994,8 @@ function viewDetail(M,id){
 }
 
 /* ============ settings: sessions & exercises ============ */
+/* re-render without losing the reader's place */
+function rerender(){ const y=window.scrollY; render(); window.scrollTo(0,y); }
 const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const todayIdx=()=>(new Date().getDay()+6)%7;
 const savePlan=()=>kvSet('weekPlan',S.plan);
@@ -1029,7 +1031,7 @@ function viewSettings(M){
       btn.onclick=async()=>{
         const i=+btn.dataset.i;
         S.plan[i]=(S.plan[i]===k)?null:k;   /* a day belongs to one session only */
-        await savePlan(); render();
+        await savePlan(); rerender();
       };
     });
     const card=document.createElement('div'); card.className='card';
@@ -1040,8 +1042,8 @@ function viewSettings(M){
         <button class="iconbtn up" ${i===0?'disabled':''}>${ico('chevU',16)}</button>
         <button class="iconbtn down" ${i===t.exercises.length-1?'disabled':''}>${ico('chevD',16)}</button>
         <button class="iconbtn edit">${ico('pencil',15)}</button>`;
-      row.querySelector('.up').onclick=async()=>{ t.exercises.splice(i-1,0,t.exercises.splice(i,1)[0]); await saveTemplates(); render(); };
-      row.querySelector('.down').onclick=async()=>{ t.exercises.splice(i+1,0,t.exercises.splice(i,1)[0]); await saveTemplates(); render(); };
+      row.querySelector('.up').onclick=async()=>{ t.exercises.splice(i-1,0,t.exercises.splice(i,1)[0]); await saveTemplates(); rerender(); };
+      row.querySelector('.down').onclick=async()=>{ t.exercises.splice(i+1,0,t.exercises.splice(i,1)[0]); await saveTemplates(); rerender(); };
       row.querySelector('.edit').onclick=()=>nav('exercise/'+k+'/'+ex.id);
       card.appendChild(row);
     });
@@ -1229,7 +1231,7 @@ async function applyCellEdit(series,date,field,value){
   return true;
 }
 function startCellEdit(btn,series){
-  const back=()=>{ const y=window.scrollY; render(); window.scrollTo(0,y); };
+  const back=rerender;
   const inp=document.createElement('input');
   inp.type='text'; inp.inputMode='decimal'; inp.className='celledit';
   inp.value=btn.textContent==='—'?'':btn.textContent;
