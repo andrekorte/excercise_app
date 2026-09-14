@@ -224,6 +224,25 @@ details.datatable{margin-top:10px}
 details.datatable summary{color:var(--accent); font-size:14px; font-weight:650; cursor:pointer}
 details.datatable table{width:100%; font-size:14px; border-collapse:collapse; margin-top:6px}
 details.datatable td,details.datatable th{padding:5px 6px; border-top:1px solid var(--grid); text-align:left}
+.weekplan{background:var(--surface); border-radius:12px; padding:11px 10px 9px;
+  box-shadow:inset 0 0 0 1px var(--ring), var(--shadow); margin-bottom:12px}
+.wpdays{display:flex; gap:4px}
+.wpday{flex:1; display:flex; flex-direction:column; align-items:center; gap:5px}
+.wpd{font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--muted)}
+.wpday.today .wpd{color:var(--accent)}
+.wpslot{width:28px; height:28px; min-width:28px; border-radius:8px; display:inline-flex;
+  align-items:center; justify-content:center; font-weight:700; font-size:13px; padding:0}
+.wpslot.none{color:var(--muted); box-shadow:inset 0 0 0 1px var(--ring)}
+.wpday.today .wpslot{box-shadow:0 0 0 2px var(--accent)}
+.wptoday{text-align:center; font-size:12.5px; font-weight:600; color:var(--ink-2); margin-top:9px}
+.daypick{display:flex; gap:5px; margin:0 2px 9px}
+.dbtn{flex:1; height:30px; border:0; border-radius:8px; background:var(--surface); color:var(--muted);
+  font-family:inherit; font-weight:700; font-size:11.5px; letter-spacing:.02em;
+  box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer}
+.dbtn.on{box-shadow:none}
+.dbtn.on.A{background:var(--tint-a-bg); color:var(--tint-a-ink)}
+.dbtn.on.B{background:var(--tint-b-bg); color:var(--tint-b-ink)}
+.dbtn.on.C{background:var(--tint-c-bg); color:var(--tint-c-ink)}
 .cellv{border:0; background:none; font:inherit; color:var(--accent); font-weight:650; cursor:pointer;
   padding:3px 2px; min-width:34px; text-align:right; text-decoration:underline;
   text-decoration-style:dotted; text-underline-offset:3px; font-variant-numeric:tabular-nums}
@@ -328,6 +347,7 @@ async function loadState(){
   // migration guard: ensure fields exist
   for(const k of ['A','B','C']) if(t[k]) t[k].exercises.forEach(e=>{ if(!e.mode)e.mode='reps'; if(!('videoId'in e))e.videoId=null; });
   S.templates=t;
+  S.plan=(await kvGet('weekPlan'))||[null,null,null,null,null,null,null];
   await seedHistory();
   S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
   // one-workout-per-day model: legacy entries carry a single `session`
@@ -582,6 +602,7 @@ function viewHome(M){
   $('#bBike').onclick=()=>nav('bike');
   $('#bPhy').onclick=()=>nav('physio');
   $('#bInj').onclick=()=>nav('injury');
+  if(S.plan.some(Boolean)) M.insertBefore(weekPlanStrip(),M.firstChild);
   const feed=$('#feed');
   /* days logged as several separate workouts (before same-day merging) can be combined */
   const byDate={};
@@ -973,12 +994,44 @@ function viewDetail(M,id){
 }
 
 /* ============ settings: sessions & exercises ============ */
+const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const todayIdx=()=>(new Date().getDay()+6)%7;
+const savePlan=()=>kvSet('weekPlan',S.plan);
+const planDaysFor=k=>S.plan.map((v,i)=>v===k?DAYS[i]:null).filter(Boolean);
+/* the week at a glance: one slot per day, today marked */
+function weekPlanStrip(){
+  const wrap=document.createElement('div'); wrap.className='weekplan';
+  const strip=document.createElement('div'); strip.className='wpdays';
+  S.plan.forEach((k,i)=>{
+    const d=document.createElement('div'); d.className='wpday'+(i===todayIdx()?' today':'');
+    d.innerHTML=`<span class="wpd">${DAYS[i][0]}${DAYS[i][1]}</span>`+
+      (k?`<span class="wpslot badge ${k}">${k}</span>`:`<span class="wpslot none">–</span>`);
+    strip.appendChild(d);
+  });
+  wrap.appendChild(strip);
+  const k=S.plan[todayIdx()];
+  const line=document.createElement('div'); line.className='wptoday';
+  line.textContent=k?('Today · '+S.templates[k].name):'Today · rest day';
+  wrap.appendChild(line);
+  return wrap;
+}
 function viewSettings(M){
   setBar('Exercises'); setTab('settings');
+  M.insertAdjacentHTML('beforeend','<div class="sectionlabel" style="margin-top:4px">Weekly plan</div>');
+  M.appendChild(weekPlanStrip());
   for(const k of ['A','B','C']){
     const t=S.templates[k];
     const sec=document.createElement('div');
-    sec.innerHTML=`<div class="sectionlabel"><span class="badge ${k}" style="min-width:22px;height:22px;font-size:12px">${k}</span>${esc(t.name)}</div>`;
+    sec.innerHTML=`<div class="sectionlabel"><span class="badge ${k}" style="min-width:22px;height:22px;font-size:12px">${k}</span>${esc(t.name)}</div>
+      <div class="daypick">${DAYS.map((d,i)=>
+        `<button class="dbtn ${S.plan[i]===k?'on '+k:''}" data-i="${i}">${d[0]}${d[1]}</button>`).join('')}</div>`;
+    sec.querySelectorAll('.dbtn').forEach(btn=>{
+      btn.onclick=async()=>{
+        const i=+btn.dataset.i;
+        S.plan[i]=(S.plan[i]===k)?null:k;   /* a day belongs to one session only */
+        await savePlan(); render();
+      };
+    });
     const card=document.createElement('div'); card.className='card';
     t.exercises.forEach((ex,i)=>{
       const row=document.createElement('div'); row.className='setrow';
@@ -1469,7 +1522,9 @@ function reportHTML(m){
     <span class="hint">as of ${esc(fmtFull(todayStr()))}</span></div>`);
   for(const k of ['A','B','C']){
     const t=S.templates[k]; if(!t) continue;
-    P.push(`<table><caption><span class="code">${k}</span>${esc(t.name)} · ${t.exercises.length} exercises</caption>
+    const sched=planDaysFor(k);
+    P.push(`<table><caption><span class="code">${k}</span>${esc(t.name)} · ${t.exercises.length} exercises${
+      sched.length?' · '+esc(sched.join(', ')):''}</caption>
       <thead><tr><th style="width:36%">Exercise</th><th style="width:20%">Load</th>
       <th style="width:16%">Sets × reps</th><th>Cue</th></tr></thead><tbody>`);
     for(const x of t.exercises) P.push(`<tr><td>${esc(x.name)}</td><td class="num">${esc(fmtLoad(x.load))}</td>
