@@ -224,6 +224,14 @@ details.datatable{margin-top:10px}
 details.datatable summary{color:var(--accent); font-size:14px; font-weight:650; cursor:pointer}
 details.datatable table{width:100%; font-size:14px; border-collapse:collapse; margin-top:6px}
 details.datatable td,details.datatable th{padding:5px 6px; border-top:1px solid var(--grid); text-align:left}
+.cellv{border:0; background:none; font:inherit; color:var(--accent); font-weight:650; cursor:pointer;
+  padding:3px 2px; min-width:34px; text-align:right; text-decoration:underline;
+  text-decoration-style:dotted; text-underline-offset:3px; font-variant-numeric:tabular-nums}
+.cellv:active{opacity:.6}
+input.celledit{width:78px; padding:5px 8px; font:inherit; font-size:15px; font-weight:650;
+  text-align:right; border:0; border-radius:8px; background:var(--page); color:var(--ink);
+  box-shadow:inset 0 0 0 1.5px var(--accent); font-variant-numeric:tabular-nums}
+input.celledit:focus{outline:none}
 details.datatable td:last-child,details.datatable th:last-child{text-align:right; font-variant-numeric:tabular-nums}
 
 /* video overlay */
@@ -1146,6 +1154,51 @@ function viewProgress(M,selRaw){
   $('#fSel').onchange=e=>{ location.replace('#progress/'+encodeURIComponent(e.target.value)); };
   for(const name of (sel===ALL?names:[sel])) M.appendChild(chartBox(name,series.get(name)));
 }
+/* which data tables the user left open, so an edit does not collapse them */
+const OPEN_TABLES=new Set();
+/* write an edited cell back to the day it belongs to */
+async function applyCellEdit(series,date,field,value){
+  let e=null;
+  if(series==='Swimming (laps)'){
+    e=S.entries.find(x=>x.type==='swim'&&x.date===date); if(e) e.laps=value;
+  } else if(series==='Bike ride (km)'){
+    e=S.entries.find(x=>x.type==='bike'&&x.date===date); if(e) e.km=value;
+  } else {
+    e=S.entries.find(x=>x.type==='workout'&&x.date===date);
+    const ex=e&&e.exercises.find(x=>x.name===series);
+    if(!ex) return false;
+    if(field==='reps') ex.reps=value; else ex.load.value=value;
+  }
+  if(!e) return false;
+  await saveEntry(e);
+  /* same rule as the edit screen: the latest day also refreshes the defaults */
+  if(e.type==='workout'&&e.date>=latestWorkoutDate()) await syncDefaults(e.exercises);
+  return true;
+}
+function startCellEdit(btn,series){
+  const back=()=>{ const y=window.scrollY; render(); window.scrollTo(0,y); };
+  const inp=document.createElement('input');
+  inp.type='text'; inp.inputMode='decimal'; inp.className='celledit';
+  inp.value=btn.textContent==='—'?'':btn.textContent;
+  const date=btn.dataset.d, field=btn.dataset.f;
+  btn.replaceWith(inp);
+  inp.focus(); inp.select();
+  let done=false;
+  const finish=async(commit)=>{
+    if(done) return; done=true;
+    const v=parseFloat(String(inp.value).replace(',','.'));
+    if(commit&&!isNaN(v)&&v>=0){
+      const ok=await applyCellEdit(series,date,field,Math.round(v*100)/100);
+      if(ok) toast('Updated'); else alert('Could not find that entry.');
+    }
+    back();
+  };
+  inp.onblur=()=>finish(true);
+  inp.onkeydown=ev=>{
+    if(ev.key==='Enter'){ ev.preventDefault(); inp.blur(); }
+    else if(ev.key==='Escape'){ done=true; back(); }
+  };
+}
 function chartBox(name,pts){
   const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative'; box.style.marginBottom='10px';
   const unit=pts.unit?pts.unit:(pts[0].kind==='bandKg'?'kg band':'kg');
@@ -1162,9 +1215,14 @@ function chartBox(name,pts){
     `<span><i style="background:var(--chart2)"></i>${esc(repLabel)}</span></div>`);
   box.appendChild(buildChart(pts,unit,dual?repLabel:null));
   const dt=document.createElement('details'); dt.className='datatable';
+  const cell=(p,f,v)=>`<td><button class="cellv" data-d="${p.date}" data-f="${f}">${v}</button></td>`;
   dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(unit)+'</th>'+
     (dual?'<th>'+esc(repLabel)+'</th>':'')+'</tr>'+
-    pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td><td>${p.value}</td>${dual?'<td>'+(p.reps==null?'—':p.reps)+'</td>':''}</tr>`).reverse().join('')+'</table>';
+    pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td>${cell(p,'value',p.value)}${
+      dual?cell(p,'reps',p.reps==null?'—':p.reps):''}</tr>`).reverse().join('')+'</table>';
+  dt.open=OPEN_TABLES.has(name);
+  dt.ontoggle=()=>{ dt.open?OPEN_TABLES.add(name):OPEN_TABLES.delete(name); };
+  dt.querySelectorAll('.cellv').forEach(btn=>{ btn.onclick=()=>startCellEdit(btn,name); });
   box.appendChild(dt);
   return box;
 }
