@@ -229,6 +229,7 @@ details.datatable{margin-top:10px}
 details.datatable summary{color:var(--accent); font-size:14px; font-weight:650; cursor:pointer}
 details.datatable table{width:100%; font-size:14px; border-collapse:collapse; margin-top:6px}
 details.datatable td,details.datatable th{padding:5px 6px; border-top:1px solid var(--grid); text-align:left}
+.card.resume{box-shadow:inset 0 0 0 2px var(--accent), var(--shadow)}
 .weekplan{background:var(--surface); border-radius:12px; padding:11px 10px 9px;
   box-shadow:inset 0 0 0 1px var(--ring), var(--shadow); margin-bottom:12px}
 .wpdays{display:flex; gap:4px}
@@ -562,6 +563,7 @@ function setTab(name){
 }
 function render(){
   closeOverlay();
+  draftFlush=null;
   const h=location.hash.replace(/^#/,'')||'home';
   const parts=h.split('/');
   const M=$('#main'); M.innerHTML=''; window.scrollTo(0,0);
@@ -608,6 +610,25 @@ function viewHome(M){
   $('#bPhy').onclick=()=>nav('physio');
   $('#bInj').onclick=()=>nav('injury');
   if(S.plan.some(Boolean)) M.insertBefore(weekPlanStrip(),M.firstChild);
+  const dr=readDraft();
+  if(dr){
+    const p=draftProgress(dr);
+    const c=document.createElement('div'); c.className='card resume';
+    c.innerHTML=`<div class="cardhead"><span class="badge ${dr.session}">${dr.session}</span>
+        <span class="date">Workout in progress</span></div>
+      <div class="cardsub">${esc(S.templates[dr.session]?S.templates[dr.session].name:'Session '+dr.session)} ·
+        ${p.done} of ${p.total} done${p.sets?' · '+p.sets+' set'+(p.sets>1?'s':'')+' in progress':''}</div>
+      <div class="btnrow" style="margin:11px 0 0">
+        <button class="btn small" id="bResume">Resume</button>
+        <button class="btn secondary small" id="bDiscard">Discard</button>
+      </div>`;
+    M.insertBefore(c,M.firstChild);
+    c.querySelector('#bResume').onclick=()=>nav('capture/'+dr.session);
+    c.querySelector('#bDiscard').onclick=()=>{
+      if(!confirm('Discard the workout in progress?')) return;
+      clearDraft(); rerender();
+    };
+  }
   const feed=$('#feed');
   /* days logged as several separate workouts (before same-day merging) can be combined */
   const byDate={};
@@ -669,9 +690,35 @@ function viewPick(M){
 }
 
 /* Capture new (sessionKey set) or edit existing workout (editId set) */
+/* ---- in-progress workout draft ----
+   The capture screen used to hold ticks, set marks and the note in memory only, so
+   iOS reclaiming the app mid-workout lost them. Every change is now written to
+   localStorage (synchronous, so it survives even an abrupt eviction). */
+const DRAFT_KEY='shoulder.capture.draft';
+const DRAFT_TTL=18*3600*1000;
+function readDraft(){
+  try{
+    const d=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null');
+    if(!d||!d.updatedAt||Date.now()-d.updatedAt>DRAFT_TTL||!d.ex) return null;
+    return d;
+  }catch(e){ return null; }
+}
+function writeDraft(d){
+  try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(Object.assign({v:1},d,{updatedAt:Date.now()}))); }
+  catch(e){}
+}
+function clearDraft(){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+const draftProgress=d=>{
+  const v=Object.values(d.ex||{});
+  return {done:v.filter(x=>x.done).length, total:v.length,
+    /* only part-finished exercises count — a completed one fills all its marks */
+    sets:v.filter(x=>!x.done).reduce((n,x)=>n+(x.setsDone||0),0)};
+};
+/* the capture screen registers a flusher so the draft is written when iOS backgrounds us */
+let draftFlush=null;
 function viewCapture(M,sessionKey,editId){
   setTab('home');
-  let entry, isEdit=false;
+  let entry, isEdit=false, draftEx={};
   if(editId){
     const src=S.entries.find(x=>x.id===editId);
     if(!src){ M.innerHTML='<p class="empty">Entry not found.</p>'; setBar('Edit','home'); return; }
@@ -694,6 +741,18 @@ function viewCapture(M,sessionKey,editId){
       const ex=seedFrom.exercises.find(x=>x.name===r.name);
       if(ex){ r.load=JSON.parse(JSON.stringify(ex.load)); r.sets=ex.sets; r.reps=ex.reps; }
     }
+    /* an interrupted workout wins over the defaults */
+    const d=readDraft();
+    if(d&&d.session===sessionKey){
+      draftEx=d.ex; entry.date=d.date||entry.date; entry.note=d.note||'';
+      for(const r of entry.exercises){
+        const dx=draftEx[r.name]; if(!dx) continue;
+        if(dx.load!==undefined&&r.load) r.load.value=dx.load;
+        if(dx.sets!=null) r.sets=dx.sets;
+        if(dx.reps!=null) r.reps=dx.reps;
+        r.skipped=!!dx.skipped;
+      }
+    }
     setBar('Session '+sessionKey,'capture');
   }
   const wrap=document.createElement('div');
@@ -704,8 +763,20 @@ function viewCapture(M,sessionKey,editId){
     <button class="btn" id="bSave">${isEdit?'Save Changes':'Save Workout'}</button>`;
   M.appendChild(wrap);
   const list=$('#exlist');
-  /* tick-off state: purely visual for the live workout, never saved */
+  /* live workout state: which exercises are ticked and how many sets each has done */
   const doneSet=new Set();
+  const setCounts=new Map();
+  const saveDraftNow=()=>{
+    if(isEdit) return;
+    const ex={};
+    entry.exercises.forEach(x=>{
+      ex[x.name]={load:x.load?x.load.value:null, sets:x.sets, reps:x.reps,
+        skipped:!!x.skipped, done:doneSet.has(x), setsDone:setCounts.get(x)||0};
+    });
+    const dEl=$('#fDate'), nEl=$('#fNote');
+    writeDraft({session:sessionKey, date:dEl?dEl.value:entry.date, note:nEl?nEl.value:'', ex});
+  };
+  if(!isEdit) draftFlush=saveDraftNow;
   const updateCount=()=>{ const el=$('#doneCount'); if(!el) return;
     el.textContent=doneSet.size+' of '+entry.exercises.filter(x=>!x.skipped).length+' done'; };
   const addRowEl=(x)=>{
@@ -724,7 +795,9 @@ function viewCapture(M,sessionKey,editId){
     if(hasVid) row.querySelector('.videobtn').onclick=()=>openVideo(x);
     const doneB=row.querySelector('.donebtn');
     const setB=row.querySelector('.setbtn'), marksEl=row.querySelector('.setmarks');
-    let sets=0; // sets ticked off so far — live workout state only, never saved
+    const dx=draftEx[x.name]||null;
+    let sets=(dx&&dx.setsDone)||0;   // sets ticked off so far, restored from the draft
+    setCounts.set(x,sets);
     const target=()=>Math.max(1,Math.round(x.sets)||1);
     const setDone=(on,celebrate)=>{
       row.classList.toggle('done',on);
@@ -732,11 +805,12 @@ function viewCapture(M,sessionKey,editId){
       on?doneSet.add(x):doneSet.delete(x);
       if(setB) setB.classList.toggle('hidden',on);
       if(on&&celebrate) burst(row);
-      updateCount();
+      updateCount(); saveDraftNow();
     };
     const renderMarks=()=>{
       if(!marksEl) return;
       const t=target(); if(sets>t) sets=t;
+      setCounts.set(x,sets);
       marksEl.innerHTML='';
       for(let i=0;i<t;i++){
         const d=document.createElement('i');
@@ -752,30 +826,36 @@ function viewCapture(M,sessionKey,editId){
     };
     if(setB) setB.onclick=()=>{
       if(sets>=target()) return;
-      sets++; renderMarks();
+      sets++; renderMarks(); saveDraftNow();
       if(sets>=target()) setDone(true,true);
     };
     renderMarks();
+    if(dx&&dx.done) setDone(true,false);   // restore a completed exercise
     const skipB=row.querySelector('.skipbtn');
     if(skipB) skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
       skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip';
-      updateCount(); };
+      updateCount(); saveDraftNow(); };
     const ctls=row.querySelector('.controls');
     // load control
     if(x.load.kind==='kg'||x.load.kind==='bandKg'){
-      ctls.appendChild(stepCtl(x.load.kind==='kg'?'Weight (kg)':'Band (kg)', x.load.value, x.load.kind==='kg'?0.5:1, v=>x.load.value=v));
+      ctls.appendChild(stepCtl(x.load.kind==='kg'?'Weight (kg)':'Band (kg)', x.load.value, x.load.kind==='kg'?0.5:1,
+        v=>{ x.load.value=v; saveDraftNow(); }));
     } else if(x.load.kind==='bandColor'){
       const c=document.createElement('div'); c.className='ctl';
       c.innerHTML=`<label>Band</label><input type="text" value="${esc(x.load.value)}">`;
-      c.querySelector('input').oninput=e=>x.load.value=e.target.value; ctls.appendChild(c);
+      c.querySelector('input').oninput=e=>{ x.load.value=e.target.value; saveDraftNow(); }; ctls.appendChild(c);
     }
     ctls.appendChild(stepCtl('Sets', x.sets, 1, v=>{ x.sets=v; renderMarks();
-      if(row.classList.contains('done')&&sets<target()) setDone(false,false); }));
-    ctls.appendChild(stepCtl(x.mode==='secs'?'Hold (s)':'Reps', x.reps, 1, v=>x.reps=v));
+      if(row.classList.contains('done')&&sets<target()) setDone(false,false); saveDraftNow(); }));
+    ctls.appendChild(stepCtl(x.mode==='secs'?'Hold (s)':'Reps', x.reps, 1, v=>{ x.reps=v; saveDraftNow(); }));
     list.appendChild(row);
   };
   entry.exercises.forEach(addRowEl);
   updateCount();
+  if(!isEdit){
+    $('#fNote').oninput=saveDraftNow;
+    $('#fDate').onchange=saveDraftNow;
+  }
   if(isEdit) $('#bAddEx').onclick=()=>{
     const present=new Set(entry.exercises.map(x=>x.name)), seen=new Set(), opts=[];
     for(const k of ['A','B','C']) for(const e of S.templates[k].exercises)
@@ -823,6 +903,7 @@ function viewCapture(M,sessionKey,editId){
     }
     await saveEntry(b);
     await syncDefaults(chosen);
+    clearDraft(); draftFlush=null;
     toast('Workout saved');
     nav('home');
   };
@@ -1811,6 +1892,11 @@ async function importData(ev){
     return;
   }
   render();
+  /* last chance to write the draft when iOS suspends or reclaims the app */
+  const flush=()=>{ if(draftFlush) draftFlush(); };
+  window.addEventListener('pagehide',flush);
+  window.addEventListener('beforeunload',flush);
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flush(); });
   if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')){
     navigator.serviceWorker.register('sw.js').catch(()=>{});
   }
