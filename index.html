@@ -178,6 +178,11 @@ textarea{min-height:96px; resize:vertical}
   cursor:pointer; text-align:left; font-family:inherit; color:var(--ink)}
 .pickbtn .badge{min-width:42px; height:42px; font-size:19px; border-radius:12px}
 .pickbtn.planned{box-shadow:inset 0 0 0 2px var(--accent), var(--shadow)}
+.pickbtn.activity{padding:14px 16px}
+.pickbtn.activity .chip{width:42px; height:42px; border-radius:12px}
+.pickdiv{display:flex; align-items:center; gap:12px; margin:22px 2px 12px}
+.pickdiv::before,.pickdiv::after{content:''; flex:1; height:1px; background:var(--grid)}
+.pickdiv span{font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted)}
 .pickmain{min-width:0}
 .todaytag{display:inline-block; margin-left:8px; vertical-align:2px; font-size:10.5px; font-weight:700;
   letter-spacing:.06em; text-transform:uppercase; color:#fff; background:var(--accent);
@@ -593,20 +598,12 @@ function viewHome(M){
   M.innerHTML=`
     <button class="btn" id="bCap">${ico('plus',18)} Capture Workout</button>
     <div class="btnrow">
-      <button class="btn secondary" id="bSwim"><span class="chip swim">${ico('waves',15)}</span> Swimming</button>
-      <button class="btn secondary" id="bRun"><span class="chip run">${ico('run',15)}</span> Run</button>
-    </div>
-    <div class="btnrow">
-      <button class="btn secondary" id="bBike"><span class="chip bike">${ico('bike',15)}</span> Bike ride</button>
       <button class="btn secondary" id="bPhy"><span class="chip physio">${ico('activity',15)}</span> Physio</button>
+      <button class="btn secondary" id="bInj"><span class="chip injury">${ico('alert',15)}</span> Injury Break</button>
     </div>
-    <button class="btn secondary" id="bInj"><span class="chip injury">${ico('alert',15)}</span> Injury Break</button>
     <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
     <div id="feed"></div>`;
   $('#bCap').onclick=()=>nav('capture');
-  $('#bSwim').onclick=()=>nav('swim');
-  $('#bRun').onclick=()=>nav('run');
-  $('#bBike').onclick=()=>nav('bike');
   $('#bPhy').onclick=()=>nav('physio');
   $('#bInj').onclick=()=>nav('injury');
   if(S.plan.some(Boolean)) M.insertBefore(weekPlanStrip(),M.firstChild);
@@ -687,6 +684,18 @@ function viewPick(M){
   }
   if(planned) M.insertAdjacentHTML('beforeend',
     `<p class="cue" style="margin:6px 2px 0">${esc(S.templates[planned].name)} is scheduled for today — any session can still be captured.</p>`);
+  /* activities live below the sessions, set apart by a labelled divider */
+  M.insertAdjacentHTML('beforeend','<div class="pickdiv"><span>Other activity</span></div>');
+  [['swim','waves','Swimming','laps and stroke'],
+   ['run','run','Run','distance lives in Runkeeper'],
+   ['bike','bike','Bike ride','distance in km']].forEach(([route,icon,name,sub])=>{
+    const b=document.createElement('button'); b.className='pickbtn activity';
+    b.innerHTML=`<span class="chip ${route==='swim'?'swim':route}">${ico(icon,17)}</span>
+      <span class="pickmain"><span class="pickname">${esc(name)}</span><br>
+      <span class="picksub">${esc(sub)}</span></span>`;
+    b.onclick=()=>nav(route);
+    M.appendChild(b);
+  });
 }
 
 /* Capture new (sessionKey set) or edit existing workout (editId set) */
