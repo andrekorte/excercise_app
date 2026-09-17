@@ -238,6 +238,13 @@ details.datatable summary{color:var(--accent); font-size:14px; font-weight:650; 
 details.datatable table{width:100%; font-size:14px; border-collapse:collapse; margin-top:6px}
 details.datatable td,details.datatable th{padding:5px 6px; border-top:1px solid var(--grid); text-align:left}
 .card.resume{box-shadow:inset 0 0 0 2px var(--accent), var(--shadow)}
+/* the level picker takes a line of its own, above sets and reps */
+.ctl.wide{flex:0 0 100%; min-width:100%}
+.levelseg{display:flex; gap:6px}
+.lvbtn{flex:1; height:38px; padding:0 10px; border:0; border-radius:9px; background:var(--page); color:var(--ink-2);
+  font-family:inherit; font-size:14px; font-weight:650; white-space:nowrap;
+  box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer}
+.lvbtn.on{background:var(--tint-c-bg); color:var(--tint-c-ink); box-shadow:none}
 .medq{display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid var(--grid); font-weight:600}
 .medq:first-child{border-top:0; padding-top:2px}
 .medq span{flex:1}
@@ -311,7 +318,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v30';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v31';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -375,14 +382,32 @@ async function loadState(){
   let t=await kvGet('templates');
   if(!t){ t=seedTemplates(); await kvSet('templates',t); }
   // migration guard: ensure fields exist
-  for(const k of ['A','B','C']) if(t[k]) t[k].exercises.forEach(e=>{ if(!e.mode)e.mode='reps'; if(!('videoId'in e))e.videoId=null; });
+  for(const k of ['A','B','C']) if(t[k]) t[k].exercises.forEach(e=>{ if(!e.mode)e.mode='reps'; if(!('videoId'in e))e.videoId=null;
+    if(LEVELLED.test(e.name)&&!e.levels){
+      e.levels=LEVEL_NAMES.map(name=>({name,sets:e.sets,reps:e.reps}));
+      e.level=0;
+    } });
   S.templates=t;
   S.plan=(await kvGet('weekPlan'))||[null,null,null,null,null,null,null];
   await seedHistory();
   S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
   // one-workout-per-day model: legacy entries carry a single `session`
   S.entries.forEach(e=>{ if(e.type==='workout'&&!e.sessions) e.sessions=e.session?[e.session]:[]; });
+  await backfillLevels();
 }
+/* Everything logged before levels existed was done on the bed. */
+async function backfillLevels(){
+  if(await kvGet('levelBackfillV1')) return;
+  for(const e of S.entries){
+    if(e.type!=='workout'||!e.exercises) continue;
+    let touched=false;
+    for(const x of e.exercises)
+      if(LEVELLED.test(x.name)&&!x.level){ x.level={i:0,name:LEVEL_NAMES[0]}; touched=true; }
+    if(touched) await entryPut(e);
+  }
+  await kvSet('levelBackfillV1',1);
+}
+
 /* One-time import of the pre-app paper log (July 2026). Runs once per device,
    guarded by a flag, so it never duplicates or touches entries captured later. */
 async function seedHistory(){
@@ -430,6 +455,13 @@ async function syncDefaults(rows){
       if(JSON.stringify(te.load)!==JSON.stringify(r.load)){ te.load=JSON.parse(JSON.stringify(r.load)); changed=true; }
       if(te.sets!==r.sets){ te.sets=r.sets; changed=true; }
       if(te.reps!==r.reps){ te.reps=r.reps; changed=true; }
+      /* a levelled exercise files its numbers under the level they were done at,
+         so a short floor session never overwrites the bed figures */
+      if(te.levels&&r.level&&te.levels[r.level.i]){
+        const L=te.levels[r.level.i];
+        if(L.sets!==r.sets||L.reps!==r.reps){ L.sets=r.sets; L.reps=r.reps; changed=true; }
+        if(te.level!==r.level.i){ te.level=r.level.i; changed=true; }
+      }
     }
   }
   if(changed) await saveTemplates();
@@ -481,13 +513,30 @@ function fmtDate(iso){
   if(dt.getFullYear()===yd.getFullYear()&&dt.getMonth()===yd.getMonth()&&dt.getDate()===yd.getDate()) return 'Yesterday';
   return dt.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short',year:(dt.getFullYear()===new Date().getFullYear()?undefined:'numeric')});
 }
-function fmtLoad(load){
-  if(!load||load.kind==='none') return 'bodyweight';
-  if(load.kind==='kg') return load.value+' kg';
-  if(load.kind==='bandKg') return load.value+' kg band';
-  if(load.kind==='bandColor') return load.value+' band';
-  return '';
+function fmtLoad(load,level){
+  let base='';
+  if(!load||load.kind==='none') base='bodyweight';
+  else if(load.kind==='kg') base=load.value+' kg';
+  else if(load.kind==='bandKg') base=load.value+' kg band';
+  else if(load.kind==='bandColor') base=load.value+' band';
+  const n=level&&level.name;
+  return n?(base?base+' · '+n:n):base;
 }
+/* Planks are the one place where the load never changes but the exercise still
+   gets harder, so they carry named levels instead. Each level remembers its own
+   sets and hold, because a floor plank is nothing like a bed plank. */
+const LEVELLED=/^planking (front|side)$/i;
+const LEVEL_NAMES=['On bed','On floor'];
+/* the levels defined for an exercise, looked up by name across the sessions */
+function levelsFor(name){
+  for(const k of ['A','B','C']){
+    const te=S.templates&&S.templates[k]&&S.templates[k].exercises.find(x=>x.name===name);
+    if(te&&te.levels) return te.levels;
+  }
+  return null;
+}
+/* the level a template exercise currently sits at, for display */
+const tmplLevel=e=>e.levels?{i:e.level||0,name:e.levels[e.level||0].name}:null;
 function fmtVol(x){ return x.sets+' × '+x.reps+(x.mode==='secs'?' s':''); }
 function weekCount(){
   const now=new Date(); const day=(now.getDay()+6)%7; // Mon=0
@@ -769,7 +818,7 @@ function viewCapture(M,sessionKey,editId){
       id:uid(), type:'workout', session:sessionKey, sessions:[sessionKey], date:todayStr(), createdAt:Date.now(), note:'',
       exercises:t.exercises.map(e=>({
         name:e.name, cue:e.cue, load:JSON.parse(JSON.stringify(e.load)),
-        sets:e.sets, reps:e.reps, mode:e.mode, skipped:false,
+        sets:e.sets, reps:e.reps, mode:e.mode, skipped:false, level:tmplLevel(e),
         youtube:e.youtube||'', videoId:e.videoId||null, videoOwned:false
       }))
     };
@@ -777,7 +826,8 @@ function viewCapture(M,sessionKey,editId){
     const seedFrom=S.entries.find(e=>e.type==='workout'&&e.date===todayStr());
     if(seedFrom) for(const r of entry.exercises){
       const ex=seedFrom.exercises.find(x=>x.name===r.name);
-      if(ex){ r.load=JSON.parse(JSON.stringify(ex.load)); r.sets=ex.sets; r.reps=ex.reps; }
+      if(ex){ r.load=JSON.parse(JSON.stringify(ex.load)); r.sets=ex.sets; r.reps=ex.reps;
+        if(ex.level) r.level=JSON.parse(JSON.stringify(ex.level)); }
     }
     /* an interrupted workout wins over the defaults */
     const d=readDraft();
@@ -788,6 +838,8 @@ function viewCapture(M,sessionKey,editId){
         if(dx.load!==undefined&&r.load) r.load.value=dx.load;
         if(dx.sets!=null) r.sets=dx.sets;
         if(dx.reps!=null) r.reps=dx.reps;
+        if(dx.level!=null&&r.level){ const lv=levelsFor(r.name);
+          if(lv&&lv[dx.level]) r.level={i:dx.level,name:lv[dx.level].name}; }
         r.skipped=!!dx.skipped;
       }
     }
@@ -809,6 +861,7 @@ function viewCapture(M,sessionKey,editId){
     const ex={};
     entry.exercises.forEach(x=>{
       ex[x.name]={load:x.load?x.load.value:null, sets:x.sets, reps:x.reps,
+        level:x.level?x.level.i:null,
         skipped:!!x.skipped, done:doneSet.has(x), setsDone:setCounts.get(x)||0};
     });
     const dEl=$('#fDate'), nEl=$('#fNote');
@@ -883,9 +936,33 @@ function viewCapture(M,sessionKey,editId){
       c.innerHTML=`<label>Band</label><input type="text" value="${esc(x.load.value)}">`;
       c.querySelector('input').oninput=e=>{ x.load.value=e.target.value; saveDraftNow(); }; ctls.appendChild(c);
     }
-    ctls.appendChild(stepCtl('Sets', x.sets, 1, v=>{ x.sets=v; renderMarks();
-      if(row.classList.contains('done')&&sets<target()) setDone(false,false); saveDraftNow(); }));
-    ctls.appendChild(stepCtl(x.mode==='secs'?'Hold (s)':'Reps', x.reps, 1, v=>{ x.reps=v; saveDraftNow(); }));
+    const setsCtl=stepCtl('Sets', x.sets, 1, v=>{ x.sets=v; renderMarks();
+      if(row.classList.contains('done')&&sets<target()) setDone(false,false); saveDraftNow(); });
+    const repsCtl=stepCtl(x.mode==='secs'?'Hold (s)':'Reps', x.reps, 1, v=>{ x.reps=v; saveDraftNow(); });
+    const lv=x.level?levelsFor(x.name):null;
+    if(lv){
+      const c=document.createElement('div'); c.className='ctl wide';
+      c.innerHTML='<label>Level</label><div class="levelseg">'+
+        lv.map((l,i)=>`<button type="button" class="lvbtn${i===x.level.i?' on':''}">${esc(l.name)}</button>`).join('')+
+        '</div>';
+      c.querySelectorAll('.lvbtn').forEach((btn,i)=>{
+        btn.onclick=()=>{
+          if(i===x.level.i) return;
+          x.level={i,name:lv[i].name};
+          /* each level keeps its own numbers — a floor plank is not a bed plank */
+          x.sets=lv[i].sets; x.reps=lv[i].reps;
+          setsCtl.querySelector('input').value=x.sets;
+          repsCtl.querySelector('input').value=x.reps;
+          c.querySelectorAll('.lvbtn').forEach((b,j)=>b.classList.toggle('on',j===i));
+          renderMarks();
+          if(row.classList.contains('done')&&sets<target()) setDone(false,false);
+          saveDraftNow();
+        };
+      });
+      ctls.appendChild(c);
+    }
+    ctls.appendChild(setsCtl);
+    ctls.appendChild(repsCtl);
     list.appendChild(row);
   };
   entry.exercises.forEach(addRowEl);
@@ -906,7 +983,7 @@ function viewCapture(M,sessionKey,editId){
       const o=opts[+ev.target.value]; if(!o) return;
       const e=o.e;
       const x={name:e.name, cue:e.cue, load:JSON.parse(JSON.stringify(e.load)),
-        sets:e.sets, reps:e.reps, mode:e.mode, skipped:false,
+        sets:e.sets, reps:e.reps, mode:e.mode, skipped:false, level:tmplLevel(e),
         youtube:e.youtube||'', videoId:e.videoId||null, videoOwned:false};
       entry.exercises.push(x); addRowEl(x);
       box.classList.add('hidden'); box.innerHTML='';
@@ -1084,7 +1161,7 @@ function viewDetail(M,id){
     const rows=e.exercises.map(x=>{
       const hasVid=x.videoId||ytId(x.youtube);
       return `<tr><td>${esc(x.name)}${hasVid?' <button class="videobtn" data-v="'+esc(x.name)+'" style="width:26px;height:26px">'+ico('play',12)+'</button>':''}${x.skipped?'<br><span class="skiptag">SKIPPED</span>':''}</td>
-        <td class="num">${x.skipped?'—':esc(fmtLoad(x.load))+'<br>'+esc(fmtVol(x))}</td></tr>`;
+        <td class="num">${x.skipped?'—':esc(fmtLoad(x.load,x.level))+'<br>'+esc(fmtVol(x))}</td></tr>`;
     }).join('');
     M.innerHTML=`<div class="card"><table class="dtl">${rows}</table></div>
       ${e.note?'<div class="card"><div class="cue" style="margin:0 0 4px">Note</div><div class="note-inline">'+esc(e.note)+'</div></div>':''}
@@ -1177,7 +1254,7 @@ function viewSettings(M){
     t.exercises.forEach((ex,i)=>{
       const row=document.createElement('div'); row.className='setrow';
       row.innerHTML=`<div class="setname"><div class="n">${esc(ex.name)}</div>
-        <div class="s">${esc(fmtLoad(ex.load))} · ${esc(fmtVol(ex))}${(ex.videoId||ytId(ex.youtube))?' · video':''}</div></div>
+        <div class="s">${esc(fmtLoad(ex.load,tmplLevel(ex)))} · ${esc(fmtVol(ex))}${(ex.videoId||ytId(ex.youtube))?' · video':''}</div></div>
         <button class="iconbtn up" ${i===0?'disabled':''}>${ico('chevU',16)}</button>
         <button class="iconbtn down" ${i===t.exercises.length-1?'disabled':''}>${ico('chevD',16)}</button>
         <button class="iconbtn edit">${ico('pencil',15)}</button>`;
@@ -1259,8 +1336,13 @@ function viewExercise(M,sess,exId){
   }
   function renderVol(){
     const vc=$('#volCtl'); vc.innerHTML='';
-    vc.appendChild(stepCtl('Default sets',w.sets,1,v=>w.sets=v));
-    vc.appendChild(stepCtl(w.mode==='secs'?'Default hold (s)':'Default reps',w.reps,1,v=>w.reps=v));
+    /* on a levelled exercise these are the numbers for the level it sits at */
+    const intoLevel=()=>{ if(!w.levels) return; const L=w.levels[w.level||0];
+      if(L){ L.sets=w.sets; L.reps=w.reps; } };
+    vc.appendChild(stepCtl('Default sets',w.sets,1,v=>{ w.sets=v; intoLevel(); }));
+    vc.appendChild(stepCtl(w.mode==='secs'?'Default hold (s)':'Default reps',w.reps,1,v=>{ w.reps=v; intoLevel(); }));
+    if(w.levels) vc.insertAdjacentHTML('afterend',
+      `<p class="cue" style="margin:6px 2px 0">These are the numbers for <b>${esc(w.levels[w.level||0].name)}</b>. Each level keeps its own; pick the level when you capture the workout.</p>`);
   }
   renderLoadField(); renderVol();
   $('#fKind').onchange=renderLoadField;
@@ -1323,6 +1405,22 @@ function progressSeries(){
     swims.forEach(e=>a.push({date:e.date, value:e.laps}));
     map.set('Swimming (laps)',a);
   }
+  /* levelled exercises trend the level itself, with the hold alongside it */
+  const lvlBy=new Map();
+  for(const e of [...S.entries].filter(e=>e.type==='workout')
+      .sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt)){
+    for(const x of e.exercises||[]){
+      if(x.skipped||!x.level) continue;
+      const names=(levelsFor(x.name)||[]).map(l=>l.name);
+      if(names.length<2) continue;
+      const key=x.name+' (level)';
+      if(!lvlBy.has(key)){ const a=[]; a.unit='level'; a.levels=names; a.exercise=x.name; lvlBy.set(key,a); }
+      const reps=parseFloat(x.reps);
+      lvlBy.get(key).push({date:e.date, value:x.level.i+1, levelName:x.level.name,
+        reps:isNaN(reps)?null:reps, mode:x.mode});
+    }
+  }
+  for(const [k,a] of lvlBy) map.set(k,a);
   const meds=S.entries.filter(e=>e.type==='meditation');
   if(meds.length){
     const byDay=new Map();
@@ -1406,25 +1504,34 @@ function startCellEdit(btn,series){
 }
 function chartBox(name,pts){
   const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative'; box.style.marginBottom='10px';
+  const isLevel=pts.unit==='level';
   const unit=pts.unit?pts.unit:(pts[0].kind==='bandKg'?'kg band':'kg');
   const noun=pts.unit==='laps'?'swim':(pts.unit==='km'?'ride':(pts.unit==='points'?'day':'workout'));
-  /* weight series also plot reps on their own right-hand axis */
-  const dual=!pts.unit&&pts.some(p=>p.reps!=null);
+  /* weight and level series both plot the hold or reps on their own right-hand axis */
+  const dual=(!pts.unit||isLevel)&&pts.some(p=>p.reps!=null);
   const repLabel=pts[0].mode==='secs'?'sec':'reps';
   const latest=pts[pts.length-1], first=pts[0];
   const delta=Math.round((latest.value-first.value)*100)/100;
-  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} ${noun}${pts.length>1?'s':''} · latest ${latest.value} ${unit}${
-    dual&&latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${delta?` · ${delta>0?'▲':'▼'} ${Math.abs(delta)} since first`:''}</div>`;
+  const head=isLevel
+    ? `latest ${esc(latest.levelName)}${latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${
+        delta>0?' · ▲ moved up from '+esc(first.levelName):''}`
+    : `latest ${latest.value} ${unit}${dual&&latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${
+        delta?` · ${delta>0?'▲':'▼'} ${Math.abs(delta)} since first`:''}`;
+  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} ${noun}${pts.length>1?'s':''} · ${head}</div>`;
   if(dual) box.insertAdjacentHTML('beforeend',
-    `<div class="vlegend"><span><i style="background:var(--chart)"></i>${esc(unit)}</span>`+
+    `<div class="vlegend"><span><i style="background:var(--chart)"></i>${esc(isLevel?'Level':unit)}</span>`+
     `<span><i style="background:var(--chart2)"></i>${esc(repLabel)}</span></div>`);
-  box.appendChild(buildChart(pts,unit,dual?repLabel:null));
+  box.appendChild(buildChart(pts,unit,dual?repLabel:null,isLevel?pts.levels:null));
   const dt=document.createElement('details'); dt.className='datatable';
   const cell=(p,f,v)=>`<td><button class="cellv" data-d="${p.date}" data-f="${f}">${v}</button></td>`;
-  dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(unit)+'</th>'+
+  /* a level is a name picked during the workout, not a number to overtype */
+  const flat=(v)=>`<td>${esc(String(v))}</td>`;
+  dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(isLevel?'Level':unit)+'</th>'+
     (dual?'<th>'+esc(repLabel)+'</th>':'')+'</tr>'+
-    pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td>${cell(p,'value',p.value)}${
-      dual?cell(p,'reps',p.reps==null?'—':p.reps):''}</tr>`).reverse().join('')+'</table>';
+    pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td>${
+      isLevel?flat(p.levelName):cell(p,'value',p.value)}${
+      dual?(isLevel?flat(p.reps==null?'—':p.reps):cell(p,'reps',p.reps==null?'—':p.reps)):''}</tr>`)
+      .reverse().join('')+'</table>';
   dt.open=OPEN_TABLES.has(name);
   dt.ontoggle=()=>{ dt.open?OPEN_TABLES.add(name):OPEN_TABLES.delete(name); };
   /* points are worked out from the two answers, so the cell opens the
@@ -1454,11 +1561,13 @@ function niceAxis(vals,intervals){
   return {lo:mn,hi:mx,step:(mx-mn)/intervals,
     ticks:Array.from({length:intervals+1},(_,i)=>Math.round((mn+i*(mx-mn)/intervals)*100)/100)};
 }
-function buildChart(pts,unit,repLabel){
+function buildChart(pts,unit,repLabel,levelNames){
   const dual=!!repLabel&&pts.some(p=>p.reps!=null);
-  const W=520,H=262,padL=40,padR=dual?40:14,padT=16,padB=30,INT=3;
+  const lv=levelNames&&levelNames.length>1?levelNames:null;
+  const W=520,H=262,padL=lv?96:40,padR=dual?40:14,padT=16,padB=30,INT=lv?lv.length-1:3;
   const n=pts.length;
-  const A=niceAxis(pts.map(p=>p.value),INT);
+  /* levels are a named ladder, so the axis is one gridline per rung */
+  const A=lv?{lo:0.5,hi:lv.length+0.5,ticks:lv.map((_,i)=>i+1)}:niceAxis(pts.map(p=>p.value),INT);
   const B=dual?niceAxis(pts.filter(p=>p.reps!=null).map(p=>p.reps),INT):null;
   const X=i=> n===1 ? (padL+(W-padL-padR)/2) : padL+(W-padL-padR)*(i/(n-1));
   const yOf=(v,ax)=> padT+(H-padT-padB)*(1-(v-ax.lo)/(ax.hi-ax.lo));
@@ -1475,7 +1584,7 @@ function buildChart(pts,unit,repLabel){
   A.ticks.forEach((tv,i)=>{
     const y=yOf(tv,A);
     svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:y,y2:y,stroke:'var(--grid)','stroke-width':1}));
-    svg.appendChild(txt(padL-6,y+4,tv,'end',dual?'var(--chart)':'var(--muted)'));
+    svg.appendChild(txt(padL-6,y+4,lv?lv[i]:tv,'end',dual?'var(--chart)':'var(--muted)'));
     if(dual) svg.appendChild(txt(W-padR+6,y+4,B.ticks[i],'start','var(--chart2)'));
   });
   svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:H-padB,y2:H-padB,stroke:'var(--baseline)','stroke-width':1}));
@@ -1512,7 +1621,7 @@ function buildChart(pts,unit,repLabel){
     for(let i=0;i<n;i++){ const d=Math.abs(X(i)-px); if(d<bd){bd=d;best=i;} }
     const p=pts[best];
     cross.setAttribute('x1',X(best)); cross.setAttribute('x2',X(best)); cross.setAttribute('opacity',1);
-    tip.textContent=fmtDate(p.date)+' · '+p.value+' '+unit+
+    tip.textContent=fmtDate(p.date)+' · '+(lv?p.levelName:p.value+' '+unit)+
       (dual&&p.reps!=null?' · '+p.reps+' '+repLabel:'');
     tip.style.left=(X(best)/W*r.width)+'px';
     tip.style.top=(Y(p.value)/H*r.height)+'px';
@@ -1879,10 +1988,10 @@ function reportModel(){
     const sl=(e.sessions&&e.sessions.length?e.sessions:[e.session]).join('+');
     for(const x of e.exercises){
       if(x.skipped) continue;
-      const snap={date:e.date, load:fmtLoad(x.load), vol:fmtVol(x)};
+      const snap={date:e.date, load:fmtLoad(x.load,x.level), vol:fmtVol(x)};
       const rec=prog.get(x.name)||{name:x.name,count:0,first:snap,latest:snap};
       rec.count++; rec.latest=snap; prog.set(x.name,rec);
-      rows.push([e.date, sl, x.name, fmtLoad(x.load), x.sets, x.reps+(x.mode==='secs'?' s':'')]);
+      rows.push([e.date, sl, x.name, fmtLoad(x.load,x.level), x.sets, x.reps+(x.mode==='secs'?' s':'')]);
     }
   }
   const raised=[...prog.values()].filter(r=>{
@@ -1936,7 +2045,7 @@ function reportHTML(m){
       sched.length?' · '+esc(sched.join(', ')):''}</caption>
       <thead><tr><th style="width:36%">Exercise</th><th style="width:20%">Load</th>
       <th style="width:16%">Sets × reps</th><th>Cue</th></tr></thead><tbody>`);
-    for(const x of t.exercises) P.push(`<tr><td>${esc(x.name)}</td><td class="num">${esc(fmtLoad(x.load))}</td>
+    for(const x of t.exercises) P.push(`<tr><td>${esc(x.name)}</td><td class="num">${esc(fmtLoad(x.load,tmplLevel(x)))}</td>
       <td class="num">${esc(fmtVol(x))}</td><td class="dim">${esc(x.cue||'')}</td></tr>`);
     P.push(`</tbody></table>`);
   }
@@ -2022,7 +2131,7 @@ function reportText(m){
     const t=S.templates[k]; if(!t) continue;
     L.push('');L.push(t.name);
     L.push(tab(['Exercise','Load','Sets','Reps']));
-    for(const x of t.exercises) L.push(tab([x.name,fmtLoad(x.load),x.sets,x.reps+(x.mode==='secs'?' s':'')]));
+    for(const x of t.exercises) L.push(tab([x.name,fmtLoad(x.load,tmplLevel(x)),x.sets,x.reps+(x.mode==='secs'?' s':'')]));
   }
   L.push('');L.push('2. SESSION LOG');
   L.push(tab(['Date','Type','Content','Notes']));
@@ -2072,7 +2181,7 @@ function reportEmailHTML(m){
     const t=S.templates[k]; if(!t) continue;
     P.push(`<div style="${F};font-size:13px;font-weight:700;margin:12px 0 4px">${esc(t.name)}</div>`);
     table(['Exercise','Load','Sets × reps','Cue'],
-      t.exercises.map(x=>[x.name,fmtLoad(x.load),fmtVol(x),x.cue||'']),1);
+      t.exercises.map(x=>[x.name,fmtLoad(x.load,tmplLevel(x)),fmtVol(x),x.cue||'']),1);
   }
   P.push(`<div style="${H2}">2 · Session log</div>`);
   table(['Date','Type','Content','Notes'],
