@@ -311,7 +311,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v29';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v30';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -566,7 +566,11 @@ async function openVideo(ex){
 function closeOverlay(){ if(overlayEl){ if(overlayEl._url) URL.revokeObjectURL(overlayEl._url); overlayEl.remove(); overlayEl=null; } }
 
 /* ================= router ================= */
-function nav(hash){ location.hash=hash; }
+function nav(hash){
+  /* walking away while the bell rings counts as having heard it */
+  if(typeof bellRinging==='function'&&bellRinging()) cancelBell();
+  location.hash=hash;
+}
 window.addEventListener('hashchange',render);
 function setBar(title, backHash){
   const bar=$('#appbar'); bar.innerHTML='';
@@ -1540,7 +1544,7 @@ const clearRun=()=>{ try{ localStorage.removeItem(MED_KEY); }catch(e){} };
    instant the session starts and plays from the audio thread whether or
    not our timer is still ticking. A near-silent tone runs for the whole
    session to stop iOS suspending the context in the meantime. */
-let medAudio=null, medHold=null, medBell=[];
+let medAudio=null, medHold=null, medBell=[], medBellFrom=0, medBellUntil=0;
 function audioCtx(){
   try{
     medAudio=medAudio||new (window.AudioContext||window.webkitAudioContext)();
@@ -1580,10 +1584,19 @@ function bellAt(ctx,at){
   });
 }
 /* four bells over about fifteen seconds — hard to sleep through */
-function scheduleBell(ctx,at){ for(let i=0;i<4;i++) bellAt(ctx,at+i*3.6); }
-function cancelBell(){
-  medBell.forEach(o=>{ try{ o.stop(); }catch(e){} }); medBell=[];
+function scheduleBell(ctx,at){
+  for(let i=0;i<4;i++) bellAt(ctx,at+i*3.6);
+  medBellFrom=Date.now()+Math.max(0,at-ctx.currentTime)*1000;
+  /* the last bell starts at +10.8s and its final note rings out 2.6s later */
+  medBellUntil=medBellFrom+13400;
 }
+function cancelBell(){
+  medBell.forEach(o=>{ try{ o.stop(); }catch(e){} }); medBell=[]; medBellFrom=0; medBellUntil=0;
+}
+/* audible right now (or about to be) — not merely queued for the end of the
+   session, which is ten minutes off and must survive a glance at another screen */
+const bellRinging=()=>{ const t=Date.now();
+  return medBell.length>0&&t>=medBellFrom-1000&&t<medBellUntil; };
 function buzz(){ try{ if(navigator.vibrate) navigator.vibrate([500,200,500,200,500]); }catch(e){} }
 /* play right now — the fallback when nothing could be scheduled */
 function chime(){ const ctx=audioCtx(); if(ctx) scheduleBell(ctx,ctx.currentTime+0.05); buzz(); }
@@ -1647,15 +1660,26 @@ function viewMeditate(M,editId){
     const saved=await saveMeditation(m);
     const pts=medPoints(m);
     setBar('Meditation','home');
-    M.innerHTML=`<div class="card meddone">
-        <div class="medbig">${pts} point${pts>1?'s':''}</div>
-        <div class="cardsub">Meditation saved${timed?' · '+MED_MIN+' minutes':''}${
-          afterWake?'<br>+1 within 5 minutes of waking':''}${outside?'<br>+1 outside in the sun':''}</div>
-      </div>
-      <button class="btn" id="bClose">Done</button>
-      <button class="btn secondary" id="bUndo" style="margin-top:10px">Delete this one</button>`;
-    $('#bClose').onclick=()=>{ cancelBell(); nav('home'); };
-    $('#bUndo').onclick=async()=>{ cancelBell(); await deleteEntry(saved.id); toast('Deleted'); nav('home'); };
+    let hush=null;
+    const paint=()=>{
+      const ringing=bellRinging();
+      M.innerHTML=`<div class="card meddone">
+          <div class="medbig">${pts} point${pts>1?'s':''}</div>
+          <div class="cardsub">Meditation saved${timed?' · '+MED_MIN+' minutes':''}${
+            afterWake?'<br>+1 within 5 minutes of waking':''}${outside?'<br>+1 outside in the sun':''}</div>
+        </div>
+        ${ringing?'<button class="btn" id="bHush">Stop the chime</button>':''}
+        <button class="btn ${ringing?'secondary':''}" id="bClose"${ringing?' style="margin-top:10px"':''}>Done</button>
+        <button class="btn secondary" id="bUndo" style="margin-top:10px">Delete this one</button>`;
+      const leave=async(fn)=>{ cancelBell(); clearTimeout(hush); if(fn) await fn(); nav('home'); };
+      if($('#bHush')) $('#bHush').onclick=()=>{ cancelBell(); paint(); };
+      $('#bClose').onclick=()=>leave(null);
+      $('#bUndo').onclick=()=>leave(async()=>{ await deleteEntry(saved.id); toast('Deleted'); });
+      /* drop the button by itself once the last note has died away */
+      clearTimeout(hush);
+      if(ringing) hush=setTimeout(paint,Math.max(300,medBellUntil-Date.now()+200));
+    };
+    paint();
   };
   const runView=(startedAt)=>{
     setBar('Meditating','home');
@@ -1730,7 +1754,16 @@ function viewMeditate(M,editId){
     };
     return;
   }
-  $('#bTest').onclick=()=>{ armAudio(); chime(); toast('If you heard nothing, check the ring switch'); };
+  const testBtn=()=>{
+    const b=$('#bTest'); if(!b) return;
+    b.textContent=bellRinging()?'Stop the chime':'Test the chime';
+  };
+  $('#bTest').onclick=()=>{
+    if(bellRinging()){ cancelBell(); testBtn(); return; }
+    armAudio(); chime(); testBtn();
+    setTimeout(testBtn,13600);
+    toast('If you hear nothing, check the ring switch');
+  };
   if($('#bLogs')) $('#bLogs').onclick=()=>nav('medlog');
   $('#bStart').onclick=()=>{
     const ctx=armAudio();                       /* unlock audio on the tap */
