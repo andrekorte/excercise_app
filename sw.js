@@ -1,5 +1,10 @@
-/* Shoulder Trainer service worker — cache-first app shell for offline use. */
-const VERSION = 'v28';
+/* Shoulder Trainer service worker — offline shell.
+
+   The page itself is fetched network-first so that reopening the app while
+   online always lands on the current build; the cached copy is the fallback
+   when there is no network. Everything else stays cache-first, which is what
+   makes the app usable with no signal. */
+const VERSION = 'v29';
 const CACHE = 'shoulder-trainer-' + VERSION;
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
@@ -18,6 +23,26 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+
+  const isPage = e.request.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('index.html');
+  if (isPage) {
+    // Network-first: take the live page when we can reach it, cache it, and
+    // fall back to the last good copy when we cannot.
+    e.respondWith(
+      fetch(e.request)
+        .then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(e.request, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(e.request, { ignoreSearch: true })
+          .then((hit) => hit || caches.match('index.html')))
+    );
+    return;
+  }
+
   // Cache-first, then network; refresh the cache in the background when online.
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then((hit) => {

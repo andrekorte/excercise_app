@@ -311,6 +311,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
+const APP_VER='v29';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -1192,7 +1193,10 @@ function viewSettings(M){
     <div class="sectionlabel">Backup</div>
     <div class="btnrow"><button class="btn secondary" id="bExp">Export data</button><button class="btn secondary" id="bImp">Import</button></div>
     <p class="cue" style="margin:4px 2px 24px">Your data lives only on this phone. Export regularly as a backup (videos are not included in exports).</p>
-    <input type="file" id="fImp" accept="application/json,.json" class="hidden">`;
+    <input type="file" id="fImp" accept="application/json,.json" class="hidden">
+    <div class="sectionlabel">Version</div>
+    <p class="cue" style="margin:4px 2px 24px">Shoulder Trainer ${APP_VER}. If a change I asked for is missing, close the app
+      from the app switcher, open it, then close and open it once more.</p>`;
   M.appendChild(bk);
   $('#bRep').onclick=()=>nav('report');
   $('#bExp').onclick=exportData;
