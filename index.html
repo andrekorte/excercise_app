@@ -104,6 +104,7 @@ main{padding:16px; max-width:560px; margin:0 auto}
 .badge.swim{background:var(--tint-s-bg); color:var(--tint-s-ink)}
 .badge.run{background:var(--tint-r-bg); color:var(--tint-r-ink)}
 .badge.bike{background:var(--tint-k-bg); color:var(--tint-k-ink)}
+.badge.med{background:var(--tint-m-bg); color:var(--tint-m-ink)}
 
 .weekline{color:var(--muted); font-size:13px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; margin:16px 2px 10px}
 .sectionlabel{font-size:12px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin:20px 2px 8px; display:flex; align-items:center; gap:7px}
@@ -599,7 +600,8 @@ function render(){
     if(parts[0]==='run') return viewSimple(M,'run',parts[1]||null);
     if(parts[0]==='swim') return viewSwim(M,parts[1]||null);
     if(parts[0]==='bike') return viewBike(M,parts[1]||null);
-    if(parts[0]==='meditate') return viewMeditate(M);
+    if(parts[0]==='meditate') return viewMeditate(M,parts[1]||null);
+    if(parts[0]==='medlog') return viewMedLog(M,parts[1]||null);
     if(parts[0]==='entry') return viewDetail(M,parts[1]);
     if(parts[0]==='editworkout') return viewCapture(M,null,parts[1]);
     if(parts[0]==='settings') return viewSettings(M);
@@ -1093,6 +1095,16 @@ function viewDetail(M,id){
       ${e.comments?'<div class="card"><div class="cue" style="margin:0 0 4px">Note</div><div class="note-inline">'+esc(e.comments)+'</div></div>':''}
       <div class="btnrow"><button class="btn secondary" id="bEdit">Edit</button><button class="btn danger" id="bDel">Delete</button></div>`;
     $('#bEdit').onclick=()=>nav('bike/'+e.id);
+  } else if(e.type==='meditation'){
+    const pts=e.points||medPoints(e);
+    setBar('Meditation · '+fmtDate(e.date),'medlog');
+    M.innerHTML=`<div class="card"><table class="dtl">
+        <tr><td>Points</td><td class="num">${pts} of 3</td></tr>
+        <tr><td>Within 5 min of waking</td><td class="num">${e.afterWake?'Yes':'No'}</td></tr>
+        <tr><td>Outside in the sun</td><td class="num">${e.outside?'Yes':'No'}</td></tr>
+        <tr><td>Length</td><td class="num">${e.timed?(e.minutes||MED_MIN)+' min':'logged by hand'}</td></tr></table></div>
+      <div class="btnrow"><button class="btn secondary" id="bEdit">Edit</button><button class="btn danger" id="bDel">Delete</button></div>`;
+    $('#bEdit').onclick=()=>nav('meditate/'+e.id);
   } else if(e.type==='swim'){
     setBar('Swim · '+fmtDate(e.date),'home');
     M.innerHTML=`<div class="card"><table class="dtl">
@@ -1110,7 +1122,8 @@ function viewDetail(M,id){
   }
   $('#bDel').onclick=async()=>{
     if(!confirm('Delete this entry? This cannot be undone.')) return;
-    await deleteEntry(id); toast('Deleted'); nav('home');
+    const back=e.type==='meditation'?'medlog':'home';
+    await deleteEntry(id); toast('Deleted'); nav(back);
   };
 }
 
@@ -1406,7 +1419,14 @@ function chartBox(name,pts){
       dual?cell(p,'reps',p.reps==null?'—':p.reps):''}</tr>`).reverse().join('')+'</table>';
   dt.open=OPEN_TABLES.has(name);
   dt.ontoggle=()=>{ dt.open?OPEN_TABLES.add(name):OPEN_TABLES.delete(name); };
-  dt.querySelectorAll('.cellv').forEach(btn=>{ btn.onclick=()=>startCellEdit(btn,name); });
+  /* points are worked out from the two answers, so the cell opens the
+     sitting itself rather than offering a number to overtype */
+  const isMed=pts.unit==='points';
+  dt.querySelectorAll('.cellv').forEach(btn=>{
+    btn.onclick=isMed?()=>nav('medlog/'+btn.dataset.d):()=>startCellEdit(btn,name);
+  });
+  if(isMed) dt.insertAdjacentHTML('beforeend',
+    '<p class="cue" style="margin:8px 2px 0">Tap a score to open that day’s sittings, where you can change the answers or delete one.</p>');
   box.appendChild(dt);
   return box;
 }
@@ -1509,25 +1529,65 @@ function readRun(){
 }
 const writeRun=r=>{ try{ localStorage.setItem(MED_KEY,JSON.stringify(r)); }catch(e){} };
 const clearRun=()=>{ try{ localStorage.removeItem(MED_KEY); }catch(e){} };
-/* a soft three-note chime, synthesised so it works offline */
-let medAudio=null;
-function chime(){
+
+/* --- the bell ---------------------------------------------------------
+   iOS throttles JavaScript timers the moment the phone stops paying
+   attention, so the chime is *scheduled* inside the audio clock at the
+   instant the session starts and plays from the audio thread whether or
+   not our timer is still ticking. A near-silent tone runs for the whole
+   session to stop iOS suspending the context in the meantime. */
+let medAudio=null, medHold=null, medBell=[];
+function audioCtx(){
   try{
-    const ctx=medAudio||(medAudio=new (window.AudioContext||window.webkitAudioContext)());
-    if(ctx.state==='suspended') ctx.resume();
-    [0,0.45,0.9].forEach((t,i)=>{
-      const o=ctx.createOscillator(), g=ctx.createGain();
-      o.type='sine'; o.frequency.value=[528,660,792][i];
-      o.connect(g); g.connect(ctx.destination);
-      const at=ctx.currentTime+t;
-      g.gain.setValueAtTime(0.0001,at);
-      g.gain.exponentialRampToValueAtTime(0.35,at+0.05);
-      g.gain.exponentialRampToValueAtTime(0.0001,at+1.6);
-      o.start(at); o.stop(at+1.7);
-    });
-  }catch(e){}
-  try{ if(navigator.vibrate) navigator.vibrate([400,150,400]); }catch(e){}
+    medAudio=medAudio||new (window.AudioContext||window.webkitAudioContext)();
+    if(medAudio.state==='suspended') medAudio.resume();
+    return medAudio;
+  }catch(e){ return null; }
 }
+const audioLive=()=>!!medAudio&&medAudio.state==='running';
+/* call from inside a tap: unlocks audio and keeps the context awake */
+function armAudio(){
+  const ctx=audioCtx(); if(!ctx) return null;
+  if(!medHold){
+    try{
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.type='sine'; o.frequency.value=40; g.gain.value=0.0001;
+      o.connect(g); g.connect(ctx.destination); o.start();
+      medHold={o,g};
+    }catch(e){}
+  }
+  return ctx;
+}
+function releaseAudio(){
+  try{ if(medHold){ medHold.o.stop(); medHold=null; } }catch(e){ medHold=null; }
+}
+/* one three-note bell at the given point on the audio clock */
+function bellAt(ctx,at){
+  [0,0.45,0.9].forEach((t,i)=>{
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type='sine'; o.frequency.value=[528,660,792][i];
+    o.connect(g); g.connect(ctx.destination);
+    const s=at+t;
+    g.gain.setValueAtTime(0.0001,s);
+    g.gain.exponentialRampToValueAtTime(0.6,s+0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001,s+1.6);
+    o.start(s); o.stop(s+1.7);
+    medBell.push(o);
+  });
+}
+/* four bells over about fifteen seconds — hard to sleep through */
+function scheduleBell(ctx,at){ for(let i=0;i<4;i++) bellAt(ctx,at+i*3.6); }
+function cancelBell(){
+  medBell.forEach(o=>{ try{ o.stop(); }catch(e){} }); medBell=[];
+}
+function buzz(){ try{ if(navigator.vibrate) navigator.vibrate([500,200,500,200,500]); }catch(e){} }
+/* play right now — the fallback when nothing could be scheduled */
+function chime(){ const ctx=audioCtx(); if(ctx) scheduleBell(ctx,ctx.currentTime+0.05); buzz(); }
+/* an iPhone suspends the context when the app goes away; take it back */
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&medAudio&&medAudio.state==='suspended') medAudio.resume();
+});
+
 let medWakeLock=null;
 async function keepAwake(on){
   try{
@@ -1536,43 +1596,86 @@ async function keepAwake(on){
   }catch(e){}
 }
 async function saveMeditation(m){
-  await saveEntry({id:uid(), type:'meditation', date:m.date||todayStr(), createdAt:Date.now(),
+  const e={id:uid(), type:'meditation', date:m.date||todayStr(), createdAt:Date.now(),
     afterWake:!!m.afterWake, outside:!!m.outside, minutes:m.minutes||MED_MIN,
-    timed:!!m.timed, points:medPoints(m)});
+    timed:!!m.timed, points:medPoints(m)};
+  await saveEntry(e);
+  return e;
 }
-function viewMeditate(M){
+const medLine=e=>[e.timed?MED_MIN+' minutes':'logged by hand',
+  e.afterWake?'within 5 min of waking':null, e.outside?'outside':null].filter(Boolean).join(' · ');
+
+/* the log: every sitting, newest first, each one editable and deletable */
+function viewMedLog(M,date){
   setTab('home');
-  const run=readRun();
-  let afterWake=run?!!run.afterWake:false, outside=run?!!run.outside:false;
+  setBar(date?'Meditation · '+fmtDate(date):'Meditation log','meditate');
+  const list=S.entries.filter(e=>e.type==='meditation'&&(!date||e.date===date))
+    .sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);
+  if(!list.length){ M.innerHTML='<p class="empty">No meditations recorded yet.</p>'; return; }
+  const total=list.reduce((n,e)=>n+(e.points||medPoints(e)),0);
+  M.innerHTML='<p class="cue" style="margin:0 2px 10px">'+list.length+' sitting'+
+    (list.length===1?'':'s')+' · '+total+' point'+(total===1?'':'s')+'</p>';
+  for(const e of list){
+    const c=document.createElement('div'); c.className='card tappable';
+    const pts=e.points||medPoints(e);
+    c.innerHTML=`<div class="cardhead"><span class="badge med">${ico('lotus',15)}</span>`+
+      `<span class="date">${esc(fmtDate(e.date))}</span><span class="spacer"></span>`+
+      `<span class="chev">${ico('chevR',16)}</span></div>`+
+      `<div class="cardsub">${pts} point${pts===1?'':'s'} · ${esc(medLine(e))}</div>`;
+    c.onclick=()=>nav('entry/'+e.id);
+    M.appendChild(c);
+  }
+}
+
+/* the capture form, the running timer, and editing a sitting already saved */
+function viewMeditate(M,editId){
+  setTab('home');
+  const edit=editId?S.entries.find(e=>e.id===editId&&e.type==='meditation'):null;
+  if(editId&&!edit){ setBar('Meditation','home'); M.innerHTML='<p class="empty">Entry not found.</p>'; return; }
+  const run=edit?null:readRun();
+  let afterWake=edit?!!edit.afterWake:(run?!!run.afterWake:false);
+  let outside=edit?!!edit.outside:(run?!!run.outside:false);
   let tick=null;
-  const stop=()=>{ if(tick){ clearInterval(tick); tick=null; } keepAwake(false); };
+  const stop=()=>{ if(tick){ clearInterval(tick); tick=null; } keepAwake(false); releaseAudio(); };
   const done=async(timed)=>{
-    stop(); clearRun();
+    stop(); clearRun(); buzz();
     const m={afterWake,outside,timed,date:todayStr()};
-    await saveMeditation(m);
+    const saved=await saveMeditation(m);
     const pts=medPoints(m);
+    setBar('Meditation','home');
     M.innerHTML=`<div class="card meddone">
         <div class="medbig">${pts} point${pts>1?'s':''}</div>
         <div class="cardsub">Meditation saved${timed?' · '+MED_MIN+' minutes':''}${
           afterWake?'<br>+1 within 5 minutes of waking':''}${outside?'<br>+1 outside in the sun':''}</div>
       </div>
-      <button class="btn" id="bClose">Done</button>`;
-    $('#bClose').onclick=()=>nav('home');
+      <button class="btn" id="bClose">Done</button>
+      <button class="btn secondary" id="bUndo" style="margin-top:10px">Delete this one</button>`;
+    $('#bClose').onclick=()=>{ cancelBell(); nav('home'); };
+    $('#bUndo').onclick=async()=>{ cancelBell(); await deleteEntry(saved.id); toast('Deleted'); nav('home'); };
   };
   const runView=(startedAt)=>{
     setBar('Meditating','home');
+    const armed=audioLive();
     M.innerHTML=`<div class="card timerwrap">
         <div class="tclock" id="tClock">--:--</div>
         <div class="tbar"><i id="tFill"></i></div>
         <div class="cardsub" id="tSub" style="justify-content:center"></div>
       </div>
-      <button class="btn secondary" id="bStop">Stop and discard</button>
-      <p class="cue" style="margin:8px 2px 0">Keep the app open — the chime needs the phone awake.
-        If it sleeps, the timer still counts and shows as finished when you come back.</p>`;
+      ${armed?'':'<button class="btn" id="bArm">Turn the chime back on</button>'}
+      <button class="btn secondary" id="bStop" style="margin-top:10px">Stop and discard</button>
+      <p class="cue" style="margin:8px 2px 0">${armed
+        ? 'The chime is set for '+MED_MIN+' minutes from the start. Take the phone off silent — iPhone mutes web audio when the ring switch is off.'
+        : 'The app restarted, so the chime needs one tap to arm again.'}</p>`;
     $('#tSub').textContent=[afterWake?'within 5 min of waking':null,outside?'outside':null]
       .filter(Boolean).join(' · ')||'quiet ten minutes';
+    if($('#bArm')) $('#bArm').onclick=()=>{
+      const ctx=armAudio();
+      if(ctx){ const left=Math.max(0,startedAt+MED_MIN*60000-Date.now());
+        cancelBell(); scheduleBell(ctx,ctx.currentTime+left/1000); }
+      runView(startedAt);
+    };
     $('#bStop').onclick=()=>{ if(!confirm('Discard this meditation?')) return;
-      stop(); clearRun(); nav('home'); };
+      cancelBell(); stop(); clearRun(); nav('home'); };
     const total=MED_MIN*60000;
     const paint=()=>{
       const left=Math.max(0,startedAt+total-Date.now());
@@ -1580,25 +1683,31 @@ function viewMeditate(M){
       const el=$('#tClock'); if(!el) return stop();
       el.textContent=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');
       $('#tFill').style.width=(100*(1-left/total)).toFixed(1)+'%';
-      if(left<=0){ stop(); chime(); done(true); }
+      /* the bell is already on the audio clock; only ring here if it is not */
+      if(left<=0){ const live=audioLive(); stop(); if(!live) chime(); done(true); }
     };
-    paint(); tick=setInterval(paint,250);
+    paint(); if(!tick) tick=setInterval(paint,250);
     keepAwake(true);
   };
   if(run){
     /* a session was already running — it may even have finished while we were away */
-    if(Date.now()>=run.startedAt+MED_MIN*60000){ chime(); done(true); return; }
+    if(Date.now()>=run.startedAt+MED_MIN*60000){ if(!medBell.length) chime(); done(true); return; }
     runView(run.startedAt); return;
   }
-  setBar('Meditation','home');
+  const count=S.entries.filter(e=>e.type==='meditation').length;
+  setBar(edit?'Edit meditation':'Meditation','home');
   M.innerHTML=`
     <div class="card">
       <div class="medq"><span>Within 5 minutes of waking</span><button class="qtog" id="qWake">No</button></div>
       <div class="medq"><span>Outside in the sun</span><button class="qtog" id="qSun">No</button></div>
       <div class="medscore" id="medScore"></div>
-    </div>
-    <button class="btn" id="bStart">Start meditation · ${MED_MIN} min</button>
-    <button class="btn secondary" id="bLog" style="margin-top:10px">Log one without the timer</button>`;
+    </div>`+(edit?
+    `<div class="btnrow"><button class="btn secondary" id="bCancel">Cancel</button><button class="btn" id="bSave">Save</button></div>`:
+    `<button class="btn" id="bStart">Start meditation · ${MED_MIN} min</button>
+     <button class="btn secondary" id="bLog" style="margin-top:10px">Log one without the timer</button>
+     <button class="btn secondary" id="bTest" style="margin-top:10px">Test the chime</button>
+     ${count?`<button class="btn secondary" id="bLogs" style="margin-top:10px">Meditation log · ${count}</button>`:''}
+     <p class="cue" style="margin:10px 2px 0">The chime only sounds with the ring switch on — iPhone mutes web audio on silent. Tap Test the chime to check.</p>`);
   const score=()=>{ const p=medPoints({afterWake,outside});
     $('#medScore').textContent='Worth '+p+' point'+(p>1?'s':'')+' of 3'; };
   const wire=(id,get,set)=>{
@@ -1609,9 +1718,20 @@ function viewMeditate(M){
   };
   wire('#qWake',()=>afterWake,v=>afterWake=v);
   wire('#qSun',()=>outside,v=>outside=v);
+  if(edit){
+    $('#bCancel').onclick=()=>nav('entry/'+edit.id);
+    $('#bSave').onclick=async()=>{
+      edit.afterWake=afterWake; edit.outside=outside; edit.points=medPoints(edit);
+      await saveEntry(edit); toast('Saved'); nav('entry/'+edit.id);
+    };
+    return;
+  }
+  $('#bTest').onclick=()=>{ armAudio(); chime(); toast('If you heard nothing, check the ring switch'); };
+  if($('#bLogs')) $('#bLogs').onclick=()=>nav('medlog');
   $('#bStart').onclick=()=>{
-    chime.warm=true; try{ medAudio=medAudio||new (window.AudioContext||window.webkitAudioContext)();
-      if(medAudio.state==='suspended') medAudio.resume(); }catch(e){}   /* unlock audio on the tap */
+    const ctx=armAudio();                       /* unlock audio on the tap */
+    cancelBell();
+    if(ctx) scheduleBell(ctx,ctx.currentTime+MED_MIN*60);
     const startedAt=Date.now();
     writeRun({startedAt,afterWake,outside});
     runView(startedAt);
