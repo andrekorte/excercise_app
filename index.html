@@ -164,7 +164,15 @@ textarea{min-height:96px; resize:vertical}
   70%{opacity:1}
   100%{transform:translate(var(--dx),var(--dy)) scale(1) rotate(220deg); opacity:0}
 }
+#confetti{position:fixed; inset:0; z-index:60; pointer-events:none;
+  transition:opacity .6s ease}
+.medhail{font-size:22px; font-weight:700; color:var(--ink); margin-bottom:10px; line-height:1.25}
+.card.meddone.perfect{box-shadow:inset 0 0 0 2px var(--tint-m-ink), 0 10px 30px rgba(74,58,167,.18);
+  animation:hail .5s cubic-bezier(.2,.7,.3,1)}
+@keyframes hail{0%{transform:scale(.94); opacity:.4}60%{transform:scale(1.02)}100%{transform:scale(1); opacity:1}}
 @media (prefers-reduced-motion: reduce){
+  #confetti{display:none}
+  .card.meddone.perfect{animation:none}
   .burst{display:none}
   .setmark.on.pop,.exrow.done .exbody,.donebtn.on{animation:none}
 }
@@ -318,7 +326,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v31';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v32';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -618,6 +626,7 @@ function closeOverlay(){ if(overlayEl){ if(overlayEl._url) URL.revokeObjectURL(o
 function nav(hash){
   /* walking away while the bell rings counts as having heard it */
   if(typeof bellRinging==='function'&&bellRinging()) cancelBell();
+  if(typeof clearConfetti==='function') clearConfetti();
   location.hash=hash;
 }
 window.addEventListener('hashchange',render);
@@ -1714,6 +1723,55 @@ document.addEventListener('visibilitychange',()=>{
   if(!document.hidden&&medAudio&&medAudio.state==='suspended') medAudio.resume();
 });
 
+/* A full-screen shower of paper, drawn rather than animated in CSS so a
+   hundred-odd pieces cost one canvas instead of a hundred elements. */
+function confetti(ms){
+  try{
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const old=document.getElementById('confetti'); if(old) old.remove();
+    const cv=document.createElement('canvas'); cv.id='confetti';
+    const dpr=Math.min(2,window.devicePixelRatio||1);
+    const W=innerWidth, H=innerHeight;
+    cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+'px'; cv.style.height=H+'px';
+    document.body.appendChild(cv);
+    const g=cv.getContext('2d'); g.scale(dpr,dpr);
+    const colors=['#4a3aa7','#2a78d6','#eb6834','#eda100','#1baf7a','#e87ba4'];
+    const bits=[];
+    for(let i=0;i<130;i++) bits.push({
+      x:Math.random()*W, y:-20-Math.random()*H*0.6,
+      w:5+Math.random()*6, h:8+Math.random()*7,
+      vy:1.6+Math.random()*2.6, vx:(Math.random()-0.5)*1.4,
+      rot:Math.random()*Math.PI*2, vr:(Math.random()-0.5)*0.22,
+      sway:0.6+Math.random()*1.4, phase:Math.random()*Math.PI*2,
+      c:colors[i%colors.length]
+    });
+    const until=Date.now()+(ms||4200);
+    let raf=null;
+    const frame=()=>{
+      g.clearRect(0,0,W,H);
+      let live=false;
+      for(const b of bits){
+        b.y+=b.vy; b.x+=b.vx+Math.sin((b.y+b.phase*40)/38)*b.sway*0.5; b.rot+=b.vr;
+        if(b.y<H+30) live=true;
+        g.save(); g.translate(b.x,b.y); g.rotate(b.rot);
+        g.fillStyle=b.c; g.fillRect(-b.w/2,-b.h/2,b.w,b.h);
+        g.restore();
+      }
+      if(live&&Date.now()<until) raf=requestAnimationFrame(frame);
+      else { cv.style.opacity=0; setTimeout(()=>cv.remove(),650); }
+    };
+    raf=requestAnimationFrame(frame);
+    /* never outlive the screen that started it */
+    setTimeout(()=>{ if(raf) cancelAnimationFrame(raf); cv.style.opacity=0;
+      setTimeout(()=>cv.remove(),650); },(ms||4200)+400);
+  }catch(e){}
+}
+const clearConfetti=()=>{ const c=document.getElementById('confetti'); if(c) c.remove(); };
+/* a full house needs waking within five minutes, so it is nearly always morning —
+   but not always, and greeting him with the wrong time of day would be worse than none */
+const medHail=h=>(h<12?{a:'Good morning, André.',b:'Well done.'}
+                       :{a:'Well done, André.',b:''});
+
 let medWakeLock=null;
 async function keepAwake(on){
   try{
@@ -1769,10 +1827,15 @@ function viewMeditate(M,editId){
     const saved=await saveMeditation(m);
     const pts=medPoints(m);
     setBar('Meditation','home');
+    /* a full house - awake, outside, sat down - deserves more than a number */
+    const perfect=pts===3;
+    const hail=medHail(new Date().getHours());
+    if(perfect) confetti();
     let hush=null;
     const paint=()=>{
       const ringing=bellRinging();
-      M.innerHTML=`<div class="card meddone">
+      M.innerHTML=`<div class="card meddone${perfect?' perfect':''}">
+          ${perfect?`<div class="medhail">${esc(hail.a)}${hail.b?'<br>'+esc(hail.b):''}</div>`:''}
           <div class="medbig">${pts} point${pts>1?'s':''}</div>
           <div class="cardsub">Meditation saved${timed?' · '+MED_MIN+' minutes':''}${
             afterWake?'<br>+1 within 5 minutes of waking':''}${outside?'<br>+1 outside in the sun':''}</div>
@@ -1780,7 +1843,7 @@ function viewMeditate(M,editId){
         ${ringing?'<button class="btn" id="bHush">Stop the chime</button>':''}
         <button class="btn ${ringing?'secondary':''}" id="bClose"${ringing?' style="margin-top:10px"':''}>Done</button>
         <button class="btn secondary" id="bUndo" style="margin-top:10px">Delete this one</button>`;
-      const leave=async(fn)=>{ cancelBell(); clearTimeout(hush); if(fn) await fn(); nav('home'); };
+      const leave=async(fn)=>{ cancelBell(); clearConfetti(); clearTimeout(hush); if(fn) await fn(); nav('home'); };
       if($('#bHush')) $('#bHush').onclick=()=>{ cancelBell(); paint(); };
       $('#bClose').onclick=()=>leave(null);
       $('#bUndo').onclick=()=>leave(async()=>{ await deleteEntry(saved.id); toast('Deleted'); });
