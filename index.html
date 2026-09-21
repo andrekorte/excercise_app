@@ -28,6 +28,7 @@
   --tint-r-bg:#fdf3da; --tint-r-ink:#8a6100;
   --tint-k-bg:#fbe9f0; --tint-k-ink:#a53a68;
   --tint-m-bg:#eceafa; --tint-m-ink:#4a3aa7;
+  --tint-ai-bg:#e4f0f6; --tint-ai-ink:#14607f;
   --warn:#b98200; --warn-bg:#fdf3da;
   --shadow:0 1px 2px rgba(20,20,18,.05);
 }
@@ -297,6 +298,39 @@ input.celledit{width:78px; padding:5px 8px; font:inherit; font-size:15px; font-w
 input.celledit:focus{outline:none}
 details.datatable td:last-child,details.datatable th:last-child{text-align:right; font-variant-numeric:tabular-nums}
 
+/* ================= AI trainer ================= */
+.chip.ai,.badge.ai{background:var(--tint-ai-bg); color:var(--tint-ai-ink)}
+#chatwrap{display:flex; flex-direction:column; gap:12px; padding-bottom:6px}
+.bub{max-width:88%; padding:11px 14px; border-radius:16px; font-size:15px; line-height:1.5;
+  white-space:pre-wrap; overflow-wrap:anywhere}
+.bub.me{align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:5px}
+.bub.ai{align-self:flex-start; background:var(--surface); color:var(--ink);
+  box-shadow:inset 0 0 0 1px var(--ring), var(--shadow); border-bottom-left-radius:5px}
+.bub.ai b{font-weight:700}
+.bub.ai .h{display:block; font-weight:700; margin:13px 0 3px}
+.bub.ai .h:first-child{margin-top:0}
+.bub.err{align-self:stretch; max-width:100%; background:var(--tint-i-bg); color:var(--tint-i-ink);
+  box-shadow:none; font-size:14px}
+.think{align-self:flex-start; font-size:12.5px; color:var(--muted); font-style:italic;
+  padding:2px 4px; max-width:88%; white-space:pre-wrap}
+.dots{display:inline-flex; gap:4px; align-items:center; padding:4px 2px}
+.dots i{width:6px; height:6px; border-radius:50%; background:var(--muted); animation:blip 1.1s infinite}
+.dots i:nth-child(2){animation-delay:.18s} .dots i:nth-child(3){animation-delay:.36s}
+@keyframes blip{0%,60%,100%{opacity:.25} 30%{opacity:1}}
+.askbar{position:sticky; bottom:0; background:var(--page); padding:9px 0 calc(6px + env(safe-area-inset-bottom));
+  display:flex; gap:8px; align-items:flex-end; margin-top:6px}
+.askbar textarea{flex:1; min-height:46px; max-height:132px; resize:none; padding:12px 14px;
+  font:inherit; font-size:16px; border:0; border-radius:16px; background:var(--surface); color:var(--ink);
+  box-shadow:inset 0 0 0 1px var(--ring)}
+.askbar textarea:focus{outline:none; box-shadow:inset 0 0 0 1.5px var(--accent)}
+.askbar button{flex:none; width:46px; height:46px; border:0; border-radius:50%; background:var(--accent);
+  color:#fff; display:inline-flex; align-items:center; justify-content:center; cursor:pointer}
+.askbar button:disabled{background:var(--ring); color:var(--muted)}
+.mictip{font-size:12.5px; color:var(--muted); margin:0 4px 8px; display:flex; gap:7px; align-items:flex-start}
+.mictip svg{flex:none; margin-top:1px}
+.costline{font-size:11.5px; color:var(--muted); text-align:center; margin:2px 0 0}
+@media (prefers-reduced-motion: reduce){ .dots i{animation:none; opacity:.6} }
+
 /* video overlay */
 .overlay{position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.85);
   display:flex; align-items:center; justify-content:center; flex-direction:column; padding:16px}
@@ -326,7 +360,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v32';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v33';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -591,6 +625,9 @@ const ICONS={
   x:'<path d="M18 6 6 18M6 6l12 12"/>',
   check:'<path d="m5 13 4.5 4.5L19 7"/>',
   waves:'<path d="M2 7.5c2.5-2 4.5 2 7 0s4.5-2 7 0 4.5 2 6 .5"/><path d="M2 13c2.5-2 4.5 2 7 0s4.5-2 7 0 4.5 2 6 .5"/><path d="M2 18.5c2.5-2 4.5 2 7 0s4.5-2 7 0 4.5 2 6 .5"/>',
+  spark:'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z"/>',
+  send:'<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
+  mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
   lotus:'<path d="M12 4c1.9 1.7 2.9 3.7 2.9 6S13.9 14.3 12 16c-1.9-1.7-2.9-3.7-2.9-6S10.1 5.7 12 4z"/><path d="M12 16c-2.4 0-4.4-1-6-3 2.6-1.2 4.6-.9 6 1 1.4-1.9 3.4-2.2 6-1-1.6 2-3.6 3-6 3z"/><path d="M4 18.5c2.4 1.7 5 2.5 8 2.5s5.6-.8 8-2.5"/>',
   bike:'<circle cx="5.5" cy="17.5" r="3.4"/><circle cx="18.5" cy="17.5" r="3.4"/><path d="m5.5 17.5 4.6-8.5h4.6l3.8 8.5"/><path d="M9 9h4.8"/>',
   run:'<circle cx="15.5" cy="4.2" r="1.9"/><path d="M13.5 21.5 15 15l-3.2-2.6.9-4.9 3.3 3.4 3 .8"/><path d="M12.7 7.5 9 8.8l-1 3.2M11.8 12.4 7 16l-2.5 5.5"/>',
@@ -654,6 +691,7 @@ function render(){
   const h=location.hash.replace(/^#/,'')||'home';
   const parts=h.split('/');
   const M=$('#main'); M.innerHTML=''; window.scrollTo(0,0);
+  if(typeof coachCleanup==='function'){ coachCleanup(); coachCleanup=null; }
   try{
     if(parts[0]==='home') return viewHome(M);
     if(parts[0]==='capture'&&!parts[1]) return viewPick(M);
@@ -665,6 +703,8 @@ function render(){
     if(parts[0]==='bike') return viewBike(M,parts[1]||null);
     if(parts[0]==='meditate') return viewMeditate(M,parts[1]||null);
     if(parts[0]==='medlog') return viewMedLog(M,parts[1]||null);
+    if(parts[0]==='coach') return viewCoach(M,parts[1]||null)
+      .catch(err=>{ M.innerHTML='<p class="empty">Something went wrong: '+esc(err.message)+'</p>'; console.error(err); });
     if(parts[0]==='entry') return viewDetail(M,parts[1]);
     if(parts[0]==='editworkout') return viewCapture(M,null,parts[1]);
     if(parts[0]==='settings') return viewSettings(M);
@@ -686,9 +726,11 @@ function viewHome(M){
       <button class="btn secondary" id="bInj"><span class="chip injury">${ico('alert',15)}</span> Injury Break</button>
     </div>
     <button class="btn secondary" id="bMed"><span class="chip med">${ico('lotus',15)}</span> Meditation</button>
+    <button class="btn secondary" id="bAI"><span class="chip ai">${ico('spark',15)}</span> AI trainer</button>
     <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
     <div id="feed"></div>`;
   $('#bCap').onclick=()=>nav('capture');
+  $('#bAI').onclick=()=>nav('coach');
   $('#bPhy').onclick=()=>nav('physio');
   $('#bMed').onclick=()=>nav('meditate');
   $('#bInj').onclick=()=>nav('injury');
@@ -1948,6 +1990,323 @@ function viewMeditate(M,editId){
   $('#bLog').onclick=()=>done(false);
 }
 
+/* ================= AI trainer =================
+   The whole training history fits in one prompt - a year of sessions is under
+   20k tokens against a million-token window - so there is no retrieval here and
+   no summarising. Everything goes in, verbatim, every time, and prompt caching
+   keeps the repeat cost of that down to a tenth. */
+const AI_MODEL='claude-opus-5';
+const AI_URL='https://api.anthropic.com/v1/messages';
+const AI_MAXSESS=20;                 /* readings kept on the phone */
+
+const aiKey=()=>kvGet('aiKey');
+const aiAbout=()=>kvGet('aiAbout').then(v=>v||'');
+const aiSessions=()=>kvGet('aiSessions').then(v=>Array.isArray(v)?v:[]);
+const aiSaveSessions=v=>kvSet('aiSessions',v.slice(-AI_MAXSESS));
+
+/* everything the trainer is allowed to see, as plain text */
+function coachData(){
+  const m=reportModel();
+  const L=[reportText(m)];
+  const meds=S.entries.filter(e=>e.type==='meditation')
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  if(meds.length){
+    L.push('');L.push('5. MEDITATION (not part of the shoulder programme)');
+    L.push(['Date','Points','Within 5 min of waking','Outside','Length'].join('\t'));
+    for(const e of meds) L.push([e.date,(e.points||medPoints(e)),e.afterWake?'yes':'no',
+      e.outside?'yes':'no',e.timed?(e.minutes||MED_MIN)+' min':'logged by hand'].join('\t'));
+  }
+  if(S.plan&&S.plan.some(Boolean)){
+    L.push('');L.push('6. THE WEEKLY PLAN HE SET HIMSELF');
+    L.push(S.plan.map((v,i)=>DAYS[i]+': '+(v?'Session '+v:'rest')).join('\n'));
+  }
+  return L.join('\n');
+}
+
+const AI_SYSTEM=`You are André's training partner inside his own shoulder rehabilitation app. He built the app; you are reading the data he has been entering into it since July.
+
+He wants two things from you, and he wants you to commit to an answer rather than hedge:
+1. How he is tracking.
+2. What he should focus on next.
+
+How to be useful:
+- Quote his actual figures - the exercise, the load, the dates, the reps. "Lateral Raise 90/90 has sat at 5 kg since 14 July while the reps went 15 to 20" beats "you're progressing steadily". He can check a number against his own charts; he cannot check a generality.
+- Say what you would do. He has explicitly asked for your opinion, not a menu of options. "Take it to 7.5 kg and drop back to 3 x 12" is the answer he wants. Give the reasoning in a line, not a paragraph.
+- Read the notes as carefully as the numbers. "Felt tight", "shoulder pain", a gap in the log - that is where the real signal is, and it is the only place his own experience is recorded.
+- Be willing to say nothing has changed, or that a week was poor, or that you cannot tell from this data. An observation he already knows is worth less than an honest "I don't see anything new this week".
+- Never invent a figure. If the data does not support a conclusion, say so instead of reaching for one.
+
+Where the line is: you can read loads, reps, dates and his notes. You cannot see his shoulder, you are not his physiotherapist, and you do not know what his physio has told him beyond what he has written below. Give him your opinion on loads, volume, consistency and patterns - that is what he asked for. When something looks like pain, a regression, or a decision that belongs to a clinician, say so plainly and tell him to put it to his physio; then still give him your read, because he asked for it.
+
+Style: talk to him, not about him. Short paragraphs. Plain sentences. No bullet-point avalanche, no bold-heading-per-line management-speak, no cheerleading. If he pushes back or asks what you meant, answer the question he actually asked.
+
+You may use a line starting with "## " as a short heading where it genuinely helps, and **bold** sparingly. Nothing else - no tables, no code blocks, no nested lists.`;
+
+/* what earlier readings concluded - continuity without dragging whole transcripts back in */
+function priorNote(sessions){
+  const past=sessions.filter(s=>s.gist).slice(-4);
+  if(!past.length) return '';
+  return '\n\nWHAT YOU TOLD HIM BEFORE\n'+
+    past.map(s=>'- '+s.date+': '+s.gist).join('\n')+
+    '\nHe has trained since then. Say whether he acted on it and what came of it, briefly, before moving on.';
+}
+
+function coachSystem(about,sessions){
+  const bg=about.trim()
+    ? '\n\nWHAT HE HAS TOLD YOU ABOUT HIMSELF AND THE INJURY\n'+about.trim()
+    : '\n\nHe has not written anything about the injury itself yet, so work from the data alone and say what you would want to know.';
+  return [
+    {type:'text', text:AI_SYSTEM},
+    /* stable prefix above, his data below, cached so follow-ups re-read it for a tenth of the price */
+    {type:'text', text:'TODAY IS '+todayStr()+bg+priorNote(sessions)+
+      '\n\nHIS COMPLETE TRAINING RECORD\n'+coachData(),
+     cache_control:{type:'ephemeral'}}
+  ];
+}
+
+/* ---- the call. Streamed, because a chat that freezes for twenty seconds reads as broken ---- */
+async function aiStream(key,system,messages,onText,onThink,signal){
+  const res=await fetch(AI_URL,{
+    method:'POST', signal,
+    headers:{
+      'content-type':'application/json',
+      'x-api-key':key,
+      'anthropic-version':'2023-06-01',
+      /* the key lives on this phone only; Anthropic requires this to be explicit */
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body:JSON.stringify({
+      model:AI_MODEL, max_tokens:8000, stream:true,
+      thinking:{type:'adaptive', display:'summarized'},
+      system, messages
+    })
+  });
+  if(!res.ok){
+    let detail='';
+    try{ const j=await res.json(); detail=(j.error&&j.error.message)||''; }catch(e){}
+    throw new AiError(res.status,detail);
+  }
+  const reader=res.body.getReader(), dec=new TextDecoder();
+  let buf='', usage=null, text='';
+  for(;;){
+    const {done,value}=await reader.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    let i;
+    while((i=buf.indexOf('\n\n'))>=0){
+      const chunk=buf.slice(0,i); buf=buf.slice(i+2);
+      const line=chunk.split('\n').find(l=>l.startsWith('data:'));
+      if(!line) continue;
+      let ev; try{ ev=JSON.parse(line.slice(5).trim()); }catch(e){ continue; }
+      if(ev.type==='content_block_delta'){
+        if(ev.delta.type==='text_delta'){ text+=ev.delta.text; onText(ev.delta.text); }
+        else if(ev.delta.type==='thinking_delta'&&onThink) onThink(ev.delta.thinking||'');
+      } else if(ev.type==='message_start'&&ev.message&&ev.message.usage){ usage=ev.message.usage; }
+      else if(ev.type==='message_delta'&&ev.usage){ usage=Object.assign(usage||{},ev.usage); }
+      else if(ev.type==='error'){ throw new AiError(0,(ev.error&&ev.error.message)||'stream error'); }
+    }
+  }
+  return {text,usage};
+}
+class AiError extends Error{
+  constructor(status,detail){ super(detail||('HTTP '+status)); this.status=status; this.detail=detail; }
+  friendly(){
+    if(this.status===401) return 'That API key was rejected. Check it in Settings below.';
+    if(this.status===400&&/credit|balance/i.test(this.detail)) return 'Your Anthropic account is out of credit.';
+    if(this.status===429) return 'Rate limited — wait a moment and ask again.';
+    if(this.status>=500) return 'Anthropic’s API is having trouble. Try again in a minute.';
+    return this.detail||'Something went wrong talking to the API.';
+  }
+}
+/* Opus 5: $5 per million in, $25 out, cache reads a tenth of the input price */
+function aiCost(u){
+  if(!u) return null;
+  const inp=(u.input_tokens||0)*5 + (u.cache_creation_input_tokens||0)*6.25 +
+            (u.cache_read_input_tokens||0)*0.5;
+  return (inp+(u.output_tokens||0)*25)/1e6;
+}
+const fmtCost=c=>c==null?'':(c<0.01?'under 1c':Math.round(c*100)+'c');
+
+/* the model may use "## " headings and **bold**; nothing else is allowed through */
+function aiHtml(t){
+  return esc(t)
+    .replace(/^## (.+)$/gm,'<span class="h">$1</span>')
+    .replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');
+}
+
+/* ---- setup: the key and the once-off background note ---- */
+function viewCoachSetup(M,key,about,back){
+  setBar('AI trainer','home'); setTab('home');
+  M.innerHTML=`
+    <p class="cue" style="margin:0 2px 12px">The trainer reads everything in this app — sessions, loads, reps,
+      your notes, swims, rides, meditation — and answers as a training partner would. It runs on your own
+      Anthropic API key, which is stored on this phone and never leaves it except to talk to the API.</p>
+    <div class="field"><label>Anthropic API key</label>
+      <input type="password" id="fKey" autocomplete="off" autocapitalize="off" spellcheck="false"
+        placeholder="sk-ant-..." value="${esc(key||'')}"></div>
+    <p class="cue" style="margin:-4px 2px 14px">Make a separate key for this app and put a monthly spend limit
+      on it in the Anthropic console. Then a mistake costs a few pounds, and you can revoke it without
+      touching anything else. Backups never include the key.</p>
+    <div class="field"><label>About you and the injury — written once</label>
+      <textarea id="fAbout" rows="9" placeholder="What happened to the shoulder and when. What your physio has said or diagnosed. Surgery, scans, how long you have been at it. What you are trying to get back to. Anything else — age, other conditions, sleep, work — that changes what good advice looks like.">${esc(about||'')}</textarea></div>
+    <p class="cue" style="margin:-4px 2px 16px">This goes to the trainer at the start of every conversation,
+      so you never type it twice. Paste it straight from wherever you have already written it. It is stored
+      on this phone and is included in your backups.</p>
+    <div class="btnrow"><button class="btn secondary" id="bBack">Cancel</button><button class="btn" id="bSave">Save</button></div>
+    ${key?'<button class="btn secondary" id="bForget" style="margin-top:12px; color:var(--danger)">Remove the key from this phone</button>':''}`;
+  $('#bBack').onclick=()=>nav(back||'home');
+  $('#bSave').onclick=async()=>{
+    const k=$('#fKey').value.trim(), a=$('#fAbout').value.trim();
+    if(!k){ alert('The trainer needs an API key to work.'); return; }
+    await kvSet('aiKey',k); await kvSet('aiAbout',a);
+    toast('Saved');
+    if(location.hash.replace(/^#/,'')==='coach') render(); else nav('coach');
+  };
+  if($('#bForget')) $('#bForget').onclick=async()=>{
+    if(!confirm('Remove the API key from this phone? Your notes and past readings stay.')) return;
+    await kvSet('aiKey',''); toast('Key removed'); nav('home');
+  };
+}
+
+/* ---- past readings ---- */
+function viewCoachLog(M,sessions){
+  setBar('Past readings','coach'); setTab('home');
+  if(!sessions.length){ M.innerHTML='<p class="empty">No readings yet.</p>'; return; }
+  M.innerHTML='';
+  [...sessions].reverse().forEach((s,i)=>{
+    const c=document.createElement('div'); c.className='card tappable';
+    c.innerHTML=`<div class="cardhead"><span class="badge ai">${ico('spark',15)}</span>`+
+      `<span class="date">${esc(fmtDate(s.date))}</span><span class="spacer"></span>`+
+      `<span class="chev">${ico('chevR',16)}</span></div>`+
+      `<div class="cardsub">${esc(s.gist||'(no summary)')}</div>`;
+    c.onclick=()=>nav('coach/'+(sessions.length-1-i));
+    M.appendChild(c);
+  });
+}
+
+/* ---- the conversation ---- */
+async function viewCoach(M,arg){
+  setTab('home');
+  const key=await aiKey();
+  const about=await aiAbout();
+  const sessions=await aiSessions();
+  if(arg==='setup') return viewCoachSetup(M,key,about,'coach');
+  if(arg==='log') return viewCoachLog(M,sessions);
+  if(!key) return viewCoachSetup(M,key,about,'home');
+  if(!S.entries.length){
+    setBar('AI trainer','home');
+    M.innerHTML='<p class="empty">Nothing logged yet — the trainer needs some workouts to read.</p>';
+    return;
+  }
+
+  const past=arg!=null&&sessions[+arg]?sessions[+arg]:null;   /* reading an old one */
+  setBar(past?'Reading · '+fmtDate(past.date):'AI trainer','home');
+  /* a fresh conversation each time, so today's data leads and old chat never crowds it out */
+  let msgs=past?past.msgs.slice():[];
+  let busy=false, abort=null, spent=past?past.cost||0:0;
+
+  M.innerHTML=`<div id="chatwrap"></div>
+    ${past?'<button class="btn secondary" id="bNew" style="margin-top:14px">Start a new reading</button>':`
+    <p class="mictip">${ico('mic',15)}<span>Tap the box, then the microphone on your keyboard, and talk.
+      Ask what it meant, push back, ask for its opinion.</span></p>
+    <div class="askbar">
+      <textarea id="fAsk" rows="1" placeholder="Ask a follow-up…" enterkeyhint="send"></textarea>
+      <button id="bSend" title="Send">${ico('send',18)}</button>
+    </div>
+    <p class="costline" id="costLine"></p>`}
+    <div class="btnrow" style="margin-top:14px">
+      <button class="btn secondary small" id="bLog">Past readings${sessions.length?' · '+sessions.length:''}</button>
+      <button class="btn secondary small" id="bCfg">Settings</button>
+    </div>`;
+  const wrap=$('#chatwrap');
+  $('#bLog').onclick=()=>nav('coach/log');
+  $('#bCfg').onclick=()=>nav('coach/setup');
+  if($('#bNew')) $('#bNew').onclick=()=>nav('coach');
+
+  const bubble=(cls,txt)=>{
+    const d=document.createElement('div'); d.className='bub '+cls;
+    if(cls==='ai') d.innerHTML=aiHtml(txt||''); else d.textContent=txt||'';
+    wrap.appendChild(d); return d;
+  };
+  const toBottom=()=>{ const h=document.scrollingElement;
+    window.scrollTo({top:h.scrollHeight,behavior:'smooth'}); };
+  for(const m of msgs) bubble(m.role==='user'?'me':'ai',
+    typeof m.content==='string'?m.content:m.content.map(c=>c.text||'').join(''));
+  if(past) return;
+
+  const costLine=$('#costLine');
+  const showCost=()=>{ if(spent) costLine.textContent='This conversation: '+fmtCost(spent); };
+  showCost();
+
+  const ta=$('#fAsk'), sendB=$('#bSend');
+  const grow=()=>{ ta.style.height='auto'; ta.style.height=Math.min(132,ta.scrollHeight)+'px'; };
+  ta.oninput=grow;
+  /* the iOS keyboard slides over the page rather than resizing it */
+  const kb=()=>{ const v=window.visualViewport; if(!v) return;
+    document.body.style.paddingBottom=Math.max(0,innerHeight-v.height-v.offsetTop)+'px'; };
+  if(window.visualViewport){ window.visualViewport.addEventListener('resize',kb); coachCleanup=()=>{
+    window.visualViewport.removeEventListener('resize',kb); document.body.style.paddingBottom=''; }; }
+
+  async function ask(text){
+    if(busy||!text.trim()) return;
+    busy=true; sendB.disabled=true;
+    msgs.push({role:'user',content:text});
+    bubble('me',text);
+    ta.value=''; grow(); toBottom();
+
+    const think=document.createElement('div'); think.className='think';
+    think.innerHTML='<span class="dots"><i></i><i></i><i></i></span>';
+    wrap.appendChild(think);
+    const out=bubble('ai',''); out.style.display='none';
+    let acc='', thought='';
+    abort=new AbortController();
+    try{
+      const {text:full,usage}=await aiStream(key,coachSystem(about,sessions),
+        msgs.map(m=>({role:m.role,content:m.content})),
+        t=>{ acc+=t; if(out.style.display==='none'){ think.remove(); out.style.display=''; }
+             out.innerHTML=aiHtml(acc); toBottom(); },
+        t=>{ thought+=t; think.textContent=thought.slice(-220); toBottom(); },
+        abort.signal);
+      think.remove();
+      if(!full.trim()){ out.remove(); bubble('err','The trainer returned nothing. Try asking again.'); }
+      else { out.innerHTML=aiHtml(full); msgs.push({role:'assistant',content:full}); }
+      const c=aiCost(usage); if(c) spent+=c; showCost();
+      await remember(full);
+    }catch(e){
+      think.remove(); out.remove();
+      /* an unanswered question is not history: take it back out and hand it to him again */
+      msgs.pop();
+      if(wrap.lastElementChild&&wrap.lastElementChild.classList.contains('me')) wrap.lastElementChild.remove();
+      ta.value=text; grow();
+      bubble('err',e instanceof AiError?e.friendly():
+        (navigator.onLine?'Could not reach the API: '+e.message
+                         :'No connection — the trainer needs the internet. Everything else still works offline.'));
+    }
+    busy=false; sendB.disabled=false; toBottom();
+  }
+
+  /* keep a one-line gist so the next reading knows what this one concluded —
+     taken from the opening read, not from whatever the last follow-up happened to say */
+  let gist='';
+  async function remember(full){
+    if(!gist) gist=(full.split('\n').find(l=>l.trim()&&!l.startsWith('#'))||'')
+      .replace(/\*\*/g,'').trim().slice(0,220);
+    const all=await aiSessions();
+    const mine={id:sessionId, date:todayStr(), gist, cost:spent, msgs};
+    const i=all.findIndex(s=>s.id===sessionId);
+    if(i>=0) all[i]=mine; else all.push(mine);
+    await aiSaveSessions(all);
+  }
+  const sessionId=uid();
+
+  sendB.onclick=()=>ask(ta.value);
+  ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(ta.value); } };
+
+  /* open with the reading he came for, without making him type it */
+  ask('Give me your read: how am I tracking, and what should I focus on next?');
+}
+let coachCleanup=null;
+
 /* ================= physio report ================= */
 const RCSS=`
 *{box-sizing:border-box}
@@ -2347,8 +2706,11 @@ function viewReport(M){
 
 /* ============ export / import ============ */
 async function exportData(){
+  /* the background note is his writing and worth keeping; the API key is a live
+     credential and must never travel in a file that gets emailed around */
+  const about=(await kvGet('aiAbout'))||'';
   const payload={app:'shoulder-trainer', version:1, exportedAt:new Date().toISOString(),
-    templates:S.templates, entries:S.entries};
+    templates:S.templates, entries:S.entries, about};
   const json=JSON.stringify(payload,null,1);
   const name='shoulder-trainer-backup-'+todayStr()+'.json';
   const file=new File([json],name,{type:'application/json'});
@@ -2367,6 +2729,7 @@ async function importData(ev){
   if(!data||data.app!=='shoulder-trainer'||!data.templates||!Array.isArray(data.entries)){ alert('That file is not a Shoulder Trainer backup.'); return; }
   if(!confirm('Import backup from '+(data.exportedAt||'unknown date').slice(0,10)+'?\nThis REPLACES your exercises and all '+S.entries.length+' current entries with the '+data.entries.length+' entries in the backup.')) return;
   await kvSet('templates',data.templates);
+  if(typeof data.about==='string') await kvSet('aiAbout',data.about);
   await tx('entries','readwrite',s=>{ s.clear(); for(const e of data.entries) s.put(e); });
   await loadState(); toast('Backup imported'); nav('home'); render();
 }
