@@ -298,7 +298,7 @@ input.celledit{width:78px; padding:5px 8px; font:inherit; font-size:15px; font-w
 input.celledit:focus{outline:none}
 details.datatable td:last-child,details.datatable th:last-child{text-align:right; font-variant-numeric:tabular-nums}
 
-/* ================= AI trainer ================= */
+/* ================= fitness coach ================= */
 .chip.ai,.badge.ai{background:var(--tint-ai-bg); color:var(--tint-ai-ink)}
 #chatwrap{display:flex; flex-direction:column; gap:12px; padding-bottom:6px}
 .bub{max-width:88%; padding:11px 14px; border-radius:16px; font-size:15px; line-height:1.5;
@@ -360,7 +360,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v33';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v34';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -726,7 +726,7 @@ function viewHome(M){
       <button class="btn secondary" id="bInj"><span class="chip injury">${ico('alert',15)}</span> Injury Break</button>
     </div>
     <button class="btn secondary" id="bMed"><span class="chip med">${ico('lotus',15)}</span> Meditation</button>
-    <button class="btn secondary" id="bAI"><span class="chip ai">${ico('spark',15)}</span> AI trainer</button>
+    <button class="btn secondary" id="bAI"><span class="chip ai">${ico('spark',15)}</span> Fitness coach</button>
     <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
     <div id="feed"></div>`;
   $('#bCap').onclick=()=>nav('capture');
@@ -1990,7 +1990,7 @@ function viewMeditate(M,editId){
   $('#bLog').onclick=()=>done(false);
 }
 
-/* ================= AI trainer =================
+/* ================= fitness coach =================
    The whole training history fits in one prompt - a year of sessions is under
    20k tokens against a million-token window - so there is no retrieval here and
    no summarising. Everything goes in, verbatim, every time, and prompt caching
@@ -2001,10 +2001,12 @@ const AI_MAXSESS=20;                 /* readings kept on the phone */
 
 const aiKey=()=>kvGet('aiKey');
 const aiAbout=()=>kvGet('aiAbout').then(v=>v||'');
+/* his brief for the coach — set once, applies to every conversation */
+const aiBrief=()=>kvGet('aiBrief').then(v=>(v&&v.trim())?v:AI_BRIEF);
 const aiSessions=()=>kvGet('aiSessions').then(v=>Array.isArray(v)?v:[]);
 const aiSaveSessions=v=>kvSet('aiSessions',v.slice(-AI_MAXSESS));
 
-/* everything the trainer is allowed to see, as plain text */
+/* everything the coach is allowed to see, as plain text */
 function coachData(){
   const m=reportModel();
   const L=[reportText(m)];
@@ -2023,24 +2025,35 @@ function coachData(){
   return L.join('\n');
 }
 
-const AI_SYSTEM=`You are André's training partner inside his own shoulder rehabilitation app. He built the app; you are reading the data he has been entering into it since July.
+/* Who the coach is. His setting, editable, and it leads the prompt every time. */
+const AI_BRIEF=`You are André's fitness coach, and you have two kinds of expertise. He needs both at once.
 
-He wants two things from you, and he wants you to commit to an answer rather than hedge:
+The first is clinical. You know shoulders — the rotator cuff, impingement, scapular control, how a shoulder is rehabilitated and how it gets re-injured. You have seen a great many of them. You know what can be loaded at which stage, what a stalled rehab looks like from the outside, and when something has stopped being a training question and become a clinical one.
+
+The second is coaching. You know how to build strength and muscle, in a gym or at home with whatever is to hand. You program rather than suggest: sets, loads, progressions, what to do this week.
+
+His goal is both of those at once. He wants the shoulder fixed, and he wants to come out of it stronger and carrying more muscle than he went in. Do not treat those as in tension, and do not let the rehab shrink into a set of cautious little exercises done forever. Work out what can be loaded hard right now, and load it.
+
+Motivate him the way a good coach does — by taking him seriously, by showing him what he has actually moved, and by telling him straight when a week was poor. Not by praising him. He will stop believing you if you are impressed by everything.`;
+
+/* How to do the job well. Not a setting - this is craft, not preference. */
+const AI_CRAFT=`He wants two questions answered whenever he opens this, and he wants you to commit rather than hedge:
 1. How he is tracking.
 2. What he should focus on next.
 
 How to be useful:
-- Quote his actual figures - the exercise, the load, the dates, the reps. "Lateral Raise 90/90 has sat at 5 kg since 14 July while the reps went 15 to 20" beats "you're progressing steadily". He can check a number against his own charts; he cannot check a generality.
-- Say what you would do. He has explicitly asked for your opinion, not a menu of options. "Take it to 7.5 kg and drop back to 3 x 12" is the answer he wants. Give the reasoning in a line, not a paragraph.
-- Read the notes as carefully as the numbers. "Felt tight", "shoulder pain", a gap in the log - that is where the real signal is, and it is the only place his own experience is recorded.
+- Quote his actual figures — the exercise, the load, the dates, the reps. "Lateral Raise 90/90 has sat at 5 kg since 14 July while the reps went 15 to 20" beats "you're progressing steadily". He can check a number against his own charts; he cannot check a generality.
+- Say what you would do. He has asked for your opinion, not a menu of options. "Take it to 7.5 kg and drop back to 3 x 12" is the answer he wants. Reasoning in a line, not a paragraph.
+- Read the notes as carefully as the numbers. "Felt tight", "shoulder pain", a gap in the log — that is where the signal is, and it is the only place his own experience is written down.
 - Be willing to say nothing has changed, or that a week was poor, or that you cannot tell from this data. An observation he already knows is worth less than an honest "I don't see anything new this week".
-- Never invent a figure. If the data does not support a conclusion, say so instead of reaching for one.
+- Never invent a figure. If the data does not support a conclusion, say so rather than reaching for one.
+- He will ask you about training this app does not track — gym work, training at home, building muscle, what to eat, how to sleep. Answer it properly, from what you know. Just be clear which part is his data and which part is your experience, and ask for what you are missing rather than assuming it.
 
-Where the line is: you can read loads, reps, dates and his notes. You cannot see his shoulder, you are not his physiotherapist, and you do not know what his physio has told him beyond what he has written below. Give him your opinion on loads, volume, consistency and patterns - that is what he asked for. When something looks like pain, a regression, or a decision that belongs to a clinician, say so plainly and tell him to put it to his physio; then still give him your read, because he asked for it.
+Where the line is: for all the shoulder expertise above, you are not his physiotherapist, and you are not examining him. You can read loads, reps, dates and his notes. You cannot see his shoulder, feel how it moves, or know what his physio has found beyond what he has written below. Give him your opinion on loads, volume, consistency and patterns — that is the job. When something looks like pain, a regression, or a call that belongs to a clinician, say so plainly and tell him to put it to his physio; then still give him your read, because he asked for it.
 
-Style: talk to him, not about him. Short paragraphs. Plain sentences. No bullet-point avalanche, no bold-heading-per-line management-speak, no cheerleading. If he pushes back or asks what you meant, answer the question he actually asked.
+Style: talk to him, not about him. Short paragraphs, plain sentences. No bullet-point avalanche, no bold heading on every line, no management-speak. If he pushes back or asks what you meant, answer the question he actually asked.
 
-You may use a line starting with "## " as a short heading where it genuinely helps, and **bold** sparingly. Nothing else - no tables, no code blocks, no nested lists.`;
+You may use a line starting with "## " as a short heading where it genuinely helps, and **bold** sparingly. Nothing else — no tables, no code blocks, no nested lists.`;
 
 /* what earlier readings concluded - continuity without dragging whole transcripts back in */
 function priorNote(sessions){
@@ -2051,12 +2064,12 @@ function priorNote(sessions){
     '\nHe has trained since then. Say whether he acted on it and what came of it, briefly, before moving on.';
 }
 
-function coachSystem(about,sessions){
+function coachSystem(about,sessions,brief){
   const bg=about.trim()
     ? '\n\nWHAT HE HAS TOLD YOU ABOUT HIMSELF AND THE INJURY\n'+about.trim()
     : '\n\nHe has not written anything about the injury itself yet, so work from the data alone and say what you would want to know.';
   return [
-    {type:'text', text:AI_SYSTEM},
+    {type:'text', text:brief.trim()+'\n\n'+AI_CRAFT},
     /* stable prefix above, his data below, cached so follow-ups re-read it for a tenth of the price */
     {type:'text', text:'TODAY IS '+todayStr()+bg+priorNote(sessions)+
       '\n\nHIS COMPLETE TRAINING RECORD\n'+coachData(),
@@ -2135,11 +2148,11 @@ function aiHtml(t){
 }
 
 /* ---- setup: the key and the once-off background note ---- */
-function viewCoachSetup(M,key,about,back){
-  setBar('AI trainer','home'); setTab('home');
+function viewCoachSetup(M,key,about,brief,back){
+  setBar('Fitness coach','home'); setTab('home');
   M.innerHTML=`
-    <p class="cue" style="margin:0 2px 12px">The trainer reads everything in this app — sessions, loads, reps,
-      your notes, swims, rides, meditation — and answers as a training partner would. It runs on your own
+    <p class="cue" style="margin:0 2px 12px">The coach reads everything in this app — sessions, loads, reps,
+      your notes, swims, rides, meditation — and answers as a coach would. It runs on your own
       Anthropic API key, which is stored on this phone and never leaves it except to talk to the API.</p>
     <div class="field"><label>Anthropic API key</label>
       <input type="password" id="fKey" autocomplete="off" autocapitalize="off" spellcheck="false"
@@ -2148,22 +2161,35 @@ function viewCoachSetup(M,key,about,back){
       on it in the Anthropic console. Then a mistake costs a few pounds, and you can revoke it without
       touching anything else. Backups never include the key.</p>
     <div class="field"><label>About you and the injury — written once</label>
-      <textarea id="fAbout" rows="9" placeholder="What happened to the shoulder and when. What your physio has said or diagnosed. Surgery, scans, how long you have been at it. What you are trying to get back to. Anything else — age, other conditions, sleep, work — that changes what good advice looks like.">${esc(about||'')}</textarea></div>
-    <p class="cue" style="margin:-4px 2px 16px">This goes to the trainer at the start of every conversation,
-      so you never type it twice. Paste it straight from wherever you have already written it. It is stored
-      on this phone and is included in your backups.</p>
+      <textarea id="fAbout" rows="10" placeholder="What happened to the shoulder and when. What your physio has said or diagnosed. Surgery, scans, how long you have been at it.
+
+Age and bodyweight. How many days a week you can train. What you have at the gym and what you have at home — dumbbells, bands, a bar, nothing.
+
+What you are trying to get back to, and anything else — sleep, work, other conditions — that changes what good advice looks like.">${esc(about||'')}</textarea></div>
+    <p class="cue" style="margin:-4px 2px 16px">This goes to the coach at the start of every conversation, so
+      you never type it twice. Paste it straight from wherever you have already written it. The equipment and
+      the days are worth including — without them it cannot write you a session to do at home. Stored on this
+      phone, and included in your backups.</p>
+    <details class="datatable" style="margin:0 2px 16px"><summary>The coach's brief</summary>
+      <p class="cue" style="margin:8px 0 6px">Who it is and how it should treat you. Sent ahead of everything
+        else, every time. Edit it if it is not talking to you the way you want.</p>
+      <div class="field"><textarea id="fBrief" rows="12">${esc(brief||'')}</textarea></div>
+      <button class="btn secondary small" id="bReset" style="margin-bottom:6px">Reset to the original</button>
+    </details>
     <div class="btnrow"><button class="btn secondary" id="bBack">Cancel</button><button class="btn" id="bSave">Save</button></div>
     ${key?'<button class="btn secondary" id="bForget" style="margin-top:12px; color:var(--danger)">Remove the key from this phone</button>':''}`;
   $('#bBack').onclick=()=>nav(back||'home');
+  $('#bReset').onclick=()=>{ $('#fBrief').value=AI_BRIEF; toast('Brief reset — tap Save to keep it'); };
   $('#bSave').onclick=async()=>{
     const k=$('#fKey').value.trim(), a=$('#fAbout').value.trim();
-    if(!k){ alert('The trainer needs an API key to work.'); return; }
-    await kvSet('aiKey',k); await kvSet('aiAbout',a);
+    if(!k){ alert('The coach needs an API key to work.'); return; }
+    const br=$('#fBrief').value.trim();
+    await kvSet('aiKey',k); await kvSet('aiAbout',a); await kvSet('aiBrief',br||AI_BRIEF);
     toast('Saved');
     if(location.hash.replace(/^#/,'')==='coach') render(); else nav('coach');
   };
   if($('#bForget')) $('#bForget').onclick=async()=>{
-    if(!confirm('Remove the API key from this phone? Your notes and past readings stay.')) return;
+    if(!confirm('Remove the API key from this phone? Your notes, brief and past readings stay.')) return;
     await kvSet('aiKey',''); toast('Key removed'); nav('home');
   };
 }
@@ -2189,18 +2215,19 @@ async function viewCoach(M,arg){
   setTab('home');
   const key=await aiKey();
   const about=await aiAbout();
+  const brief=await aiBrief();
   const sessions=await aiSessions();
-  if(arg==='setup') return viewCoachSetup(M,key,about,'coach');
+  if(arg==='setup') return viewCoachSetup(M,key,about,brief,'coach');
   if(arg==='log') return viewCoachLog(M,sessions);
-  if(!key) return viewCoachSetup(M,key,about,'home');
+  if(!key) return viewCoachSetup(M,key,about,brief,'home');
   if(!S.entries.length){
-    setBar('AI trainer','home');
-    M.innerHTML='<p class="empty">Nothing logged yet — the trainer needs some workouts to read.</p>';
+    setBar('Fitness coach','home');
+    M.innerHTML='<p class="empty">Nothing logged yet — the coach needs some workouts to read.</p>';
     return;
   }
 
   const past=arg!=null&&sessions[+arg]?sessions[+arg]:null;   /* reading an old one */
-  setBar(past?'Reading · '+fmtDate(past.date):'AI trainer','home');
+  setBar(past?'Reading · '+fmtDate(past.date):'Fitness coach','home');
   /* a fresh conversation each time, so today's data leads and old chat never crowds it out */
   let msgs=past?past.msgs.slice():[];
   let busy=false, abort=null, spent=past?past.cost||0:0;
@@ -2261,14 +2288,14 @@ async function viewCoach(M,arg){
     let acc='', thought='';
     abort=new AbortController();
     try{
-      const {text:full,usage}=await aiStream(key,coachSystem(about,sessions),
+      const {text:full,usage}=await aiStream(key,coachSystem(about,sessions,brief),
         msgs.map(m=>({role:m.role,content:m.content})),
         t=>{ acc+=t; if(out.style.display==='none'){ think.remove(); out.style.display=''; }
              out.innerHTML=aiHtml(acc); toBottom(); },
         t=>{ thought+=t; think.textContent=thought.slice(-220); toBottom(); },
         abort.signal);
       think.remove();
-      if(!full.trim()){ out.remove(); bubble('err','The trainer returned nothing. Try asking again.'); }
+      if(!full.trim()){ out.remove(); bubble('err','The coach returned nothing. Try asking again.'); }
       else { out.innerHTML=aiHtml(full); msgs.push({role:'assistant',content:full}); }
       const c=aiCost(usage); if(c) spent+=c; showCost();
       await remember(full);
@@ -2280,7 +2307,7 @@ async function viewCoach(M,arg){
       ta.value=text; grow();
       bubble('err',e instanceof AiError?e.friendly():
         (navigator.onLine?'Could not reach the API: '+e.message
-                         :'No connection — the trainer needs the internet. Everything else still works offline.'));
+                         :'No connection — the coach needs the internet. Everything else still works offline.'));
     }
     busy=false; sendB.disabled=false; toBottom();
   }
