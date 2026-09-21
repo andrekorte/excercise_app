@@ -301,6 +301,18 @@ details.datatable td:last-child,details.datatable th:last-child{text-align:right
 
 /* ================= fitness coach ================= */
 .chip.ai,.badge.ai{background:var(--tint-ai-bg); color:var(--tint-ai-ink)}
+.chips{display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 4px}
+.chip-ask{border:0; border-radius:999px; padding:10px 15px; font-family:inherit; font-size:14px;
+  font-weight:600; background:var(--surface); color:var(--accent);
+  box-shadow:inset 0 0 0 1px var(--ring), var(--shadow); cursor:pointer; text-align:left}
+.chip-ask:active{opacity:.6}
+.saved{align-self:flex-start; max-width:88%; display:flex; gap:7px; align-items:flex-start;
+  font-size:12.5px; color:var(--tint-ai-ink); background:var(--tint-ai-bg);
+  padding:8px 11px; border-radius:11px}
+.saved svg{flex:none; margin-top:1px}
+.factrow{display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-top:1px solid var(--grid); font-size:14px}
+.factrow:first-child{border-top:0}
+.factrow span{flex:1; line-height:1.4}
 #chatwrap{display:flex; flex-direction:column; gap:12px; padding-bottom:6px}
 .bub{max-width:88%; padding:11px 14px; border-radius:16px; font-size:15px; line-height:1.5;
   white-space:pre-wrap; overflow-wrap:anywhere}
@@ -362,7 +374,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v35';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v36';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -2001,6 +2013,39 @@ const AI_MAXSESS=20;                 /* readings kept on the phone */
 
 const aiKey=()=>kvGet('aiKey');
 const aiAbout=()=>kvGet('aiAbout').then(v=>v||'');
+/* Things he has told the coach in conversation. He should never have to say the
+   same thing twice, so the coach writes these itself, with a tool, the moment he
+   mentions something that will still be true next month. */
+const aiFacts=()=>kvGet('aiFacts').then(v=>Array.isArray(v)?v:[]);
+const AI_TOOLS=[{
+  name:'remember',
+  description:'Save something André has told you that will still be true next time — his equipment, '+
+    'his schedule, an injury, a preference, a goal, what a clinician has told him, anything that '+
+    'would otherwise make him repeat himself. Call this the moment he says it, without asking '+
+    'permission first, and then carry on with your answer. Saved facts are put in front of you at '+
+    'the start of every future conversation. Do not save one-off details like today\'s soreness or '+
+    'a single session\'s numbers — the app already sends you all of his training data. If something '+
+    'you were told before is now wrong, save the corrected version and say that you have.',
+  input_schema:{
+    type:'object',
+    properties:{fact:{type:'string',
+      description:'One self-contained sentence, written so it still makes sense read cold in six '+
+        'months. "Home gym: adjustable dumbbells to 32 kg, resistance bands anchored at several '+
+        'wall heights." Not "he said he has some bands."'}},
+    required:['fact'], additionalProperties:false
+  },
+  strict:true
+}];
+async function aiRemember(fact){
+  const all=await aiFacts();
+  const t=String(fact||'').trim();
+  if(!t) return 'Nothing to save.';
+  if(all.some(f=>f.fact.toLowerCase()===t.toLowerCase())) return 'Already known — not saved twice.';
+  all.push({fact:t, date:todayStr()});
+  await kvSet('aiFacts',all.slice(-120));
+  return 'Saved. This is now in front of you at the start of every conversation.';
+}
+
 /* his brief for the coach — set once, applies to every conversation */
 const aiBrief=()=>kvGet('aiBrief').then(v=>(v&&v.trim())?v:AI_BRIEF);
 const aiSessions=()=>kvGet('aiSessions').then(v=>Array.isArray(v)?v:[]);
@@ -2064,14 +2109,19 @@ function priorNote(sessions){
     '\nHe has trained since then. Say whether he acted on it and what came of it, briefly, before moving on.';
 }
 
-function coachSystem(about,sessions,brief){
+function coachSystem(about,sessions,brief,facts){
   const bg=about.trim()
     ? '\n\nWHAT HE HAS TOLD YOU ABOUT HIMSELF AND THE INJURY\n'+about.trim()
     : '\n\nHe has not written anything about the injury itself yet, so work from the data alone and say what you would want to know.';
+  const known=(facts&&facts.length)
+    ? '\n\nWHAT HE HAS TOLD YOU IN PAST CONVERSATIONS\n'+
+      facts.map(f=>'- '+f.fact).join('\n')+
+      '\nHe told you these once and should never have to again. Use them without being asked and without repeating them back to him.'
+    : '';
   return [
     {type:'text', text:brief.trim()+'\n\n'+AI_CRAFT},
     /* stable prefix above, his data below, cached so follow-ups re-read it for a tenth of the price */
-    {type:'text', text:'TODAY IS '+todayStr()+bg+priorNote(sessions)+
+    {type:'text', text:'TODAY IS '+todayStr()+bg+known+priorNote(sessions)+
       '\n\nHIS COMPLETE TRAINING RECORD\n'+coachData(),
      cache_control:{type:'ephemeral'}}
   ];
@@ -2091,7 +2141,7 @@ async function aiStream(key,system,messages,onText,onThink,signal){
     body:JSON.stringify({
       model:AI_MODEL, max_tokens:8000, stream:true,
       thinking:{type:'adaptive', display:'summarized'},
-      system, messages
+      tools:AI_TOOLS, system, messages
     })
   });
   if(!res.ok){
@@ -2100,7 +2150,9 @@ async function aiStream(key,system,messages,onText,onThink,signal){
     throw new AiError(res.status,detail);
   }
   const reader=res.body.getReader(), dec=new TextDecoder();
-  let buf='', usage=null, text='';
+  let buf='', usage=null, text='', stop=null;
+  const blocks=[];            /* the assistant turn, rebuilt as it arrives */
+  let json='';                /* a tool call's arguments stream in as fragments */
   for(;;){
     const {done,value}=await reader.read();
     if(done) break;
@@ -2111,15 +2163,28 @@ async function aiStream(key,system,messages,onText,onThink,signal){
       const line=chunk.split('\n').find(l=>l.startsWith('data:'));
       if(!line) continue;
       let ev; try{ ev=JSON.parse(line.slice(5).trim()); }catch(e){ continue; }
-      if(ev.type==='content_block_delta'){
-        if(ev.delta.type==='text_delta'){ text+=ev.delta.text; onText(ev.delta.text); }
-        else if(ev.delta.type==='thinking_delta'&&onThink) onThink(ev.delta.thinking||'');
+      if(ev.type==='content_block_start'){
+        const b=ev.content_block;
+        if(b.type==='text') blocks[ev.index]={type:'text',text:''};
+        else if(b.type==='tool_use'){ blocks[ev.index]={type:'tool_use',id:b.id,name:b.name,input:{}}; json=''; }
+      } else if(ev.type==='content_block_delta'){
+        const d=ev.delta;
+        if(d.type==='text_delta'){ text+=d.text;
+          if(blocks[ev.index]) blocks[ev.index].text+=d.text; onText(d.text); }
+        else if(d.type==='thinking_delta'&&onThink) onThink(d.thinking||'');
+        else if(d.type==='input_json_delta') json+=d.partial_json||'';
+      } else if(ev.type==='content_block_stop'){
+        const b=blocks[ev.index];
+        if(b&&b.type==='tool_use'){ try{ b.input=JSON.parse(json||'{}'); }catch(e){ b.input={}; } json=''; }
       } else if(ev.type==='message_start'&&ev.message&&ev.message.usage){ usage=ev.message.usage; }
-      else if(ev.type==='message_delta'&&ev.usage){ usage=Object.assign(usage||{},ev.usage); }
+      else if(ev.type==='message_delta'){
+        if(ev.usage) usage=Object.assign(usage||{},ev.usage);
+        if(ev.delta&&ev.delta.stop_reason) stop=ev.delta.stop_reason;
+      }
       else if(ev.type==='error'){ throw new AiError(0,(ev.error&&ev.error.message)||'stream error'); }
     }
   }
-  return {text,usage};
+  return {text,usage,stop,blocks:blocks.filter(Boolean)};
 }
 class AiError extends Error{
   constructor(status,detail){ super(detail||('HTTP '+status)); this.status=status; this.detail=detail; }
@@ -2170,6 +2235,7 @@ What you are trying to get back to, and anything else — sleep, work, other con
       you never type it twice. Paste it straight from wherever you have already written it. The equipment and
       the days are worth including — without them it cannot write you a session to do at home. Stored on this
       phone, and included in your backups.</p>
+    <div id="factBox"></div>
     <details class="datatable" style="margin:0 2px 16px"><summary>The coach's brief</summary>
       <p class="cue" style="margin:8px 0 6px">Who it is and how it should treat you. Sent ahead of everything
         else, every time. Edit it if it is not talking to you the way you want.</p>
@@ -2180,6 +2246,7 @@ What you are trying to get back to, and anything else — sleep, work, other con
     ${key?'<button class="btn secondary" id="bForget" style="margin-top:12px; color:var(--danger)">Remove the key from this phone</button>':''}`;
   $('#bBack').onclick=()=>nav(back||'home');
   $('#bReset').onclick=()=>{ $('#fBrief').value=AI_BRIEF; toast('Brief reset — tap Save to keep it'); };
+  paintFacts();
   $('#bSave').onclick=async()=>{
     const k=$('#fKey').value.trim(), a=$('#fAbout').value.trim();
     if(!k){ alert('The coach needs an API key to work.'); return; }
@@ -2192,6 +2259,26 @@ What you are trying to get back to, and anything else — sleep, work, other con
     if(!confirm('Remove the API key from this phone? Your notes, brief and past readings stay.')) return;
     await kvSet('aiKey',''); toast('Key removed'); nav('home');
   };
+}
+
+/* what the coach has written down about him, with a way to take it back */
+async function paintFacts(){
+  const box=$('#factBox'); if(!box) return;
+  const facts=await aiFacts();
+  if(!facts.length){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="sectionlabel">What the coach remembers</div>'+
+    '<div class="card">'+facts.map((f,i)=>
+      `<div class="factrow"><span>${esc(f.fact)}</span>`+
+      `<button class="iconbtn drop" data-i="${i}" title="Forget this">${ico('x',15)}</button></div>`).join('')+
+    '</div><p class="cue" style="margin:6px 2px 16px">It writes these itself when you tell it something '+
+    'that will still be true next month, so you never repeat yourself. Remove anything that has changed '+
+    'or that you would rather it did not keep.</p>';
+  box.querySelectorAll('.drop').forEach(b=>{
+    b.onclick=async()=>{
+      const all=await aiFacts(); all.splice(+b.dataset.i,1);
+      await kvSet('aiFacts',all); paintFacts();
+    };
+  });
 }
 
 /* ---- past readings ---- */
@@ -2216,6 +2303,7 @@ async function viewCoach(M,arg){
   const key=await aiKey();
   const about=await aiAbout();
   const brief=await aiBrief();
+  let facts=await aiFacts();
   const sessions=await aiSessions();
   if(arg==='setup') return viewCoachSetup(M,key,about,brief,'coach');
   if(arg==='log') return viewCoachLog(M,sessions);
@@ -2250,6 +2338,11 @@ async function viewCoach(M,arg){
   $('#bCfg').onclick=()=>nav('coach/setup');
   if($('#bNew')) $('#bNew').onclick=()=>nav('coach');
 
+  const noteSaved=(fact)=>{
+    const d=document.createElement('div'); d.className='saved';
+    d.innerHTML=ico('check',14)+'<span><b>Saved to your profile.</b> '+esc(fact)+'</span>';
+    wrap.appendChild(d);
+  };
   const bubble=(cls,txt)=>{
     const d=document.createElement('div'); d.className='bub '+cls;
     if(cls==='ai') d.innerHTML=aiHtml(txt||''); else d.textContent=txt||'';
@@ -2277,32 +2370,59 @@ async function viewCoach(M,arg){
   async function ask(text){
     if(busy||!text.trim()) return;
     busy=true; sendB.disabled=true;
+    const chips=$('#askChips'); if(chips) chips.remove();
+    const mark=msgs.length;
     msgs.push({role:'user',content:text});
     bubble('me',text);
     ta.value=''; grow(); toBottom();
 
-    const think=document.createElement('div'); think.className='think';
-    think.innerHTML='<span class="dots"><i></i><i></i><i></i></span>';
-    wrap.appendChild(think);
-    const out=bubble('ai',''); out.style.display='none';
-    let acc='', thought='';
     abort=new AbortController();
     try{
-      const {text:full,usage}=await aiStream(key,coachSystem(about,sessions,brief),
-        msgs.map(m=>({role:m.role,content:m.content})),
-        t=>{ acc+=t; if(out.style.display==='none'){ think.remove(); out.style.display=''; }
-             out.innerHTML=aiHtml(acc); toBottom(); },
-        t=>{ thought+=t; think.textContent=thought.slice(-220); toBottom(); },
-        abort.signal);
-      think.remove();
-      if(!full.trim()){ out.remove(); bubble('err','The coach returned nothing. Try asking again.'); }
-      else { out.innerHTML=aiHtml(full); msgs.push({role:'assistant',content:full}); }
-      const c=aiCost(usage); if(c) spent+=c; showCost();
-      await remember(full);
+      let said='';
+      /* the coach may stop to write something to his profile; let it, then carry on.
+         Bounded, so a misbehaving loop cannot spend his money in circles. */
+      for(let round=0;round<4;round++){
+        const think=document.createElement('div'); think.className='think';
+        think.innerHTML='<span class="dots"><i></i><i></i><i></i></span>';
+        wrap.appendChild(think);
+        const out=bubble('ai',''); out.style.display='none';
+        let acc='', thought='';
+        const r=await aiStream(key,coachSystem(about,sessions,brief,facts),
+          msgs.map(m=>({role:m.role,content:m.content})),
+          t=>{ acc+=t; if(out.style.display==='none'){ think.remove(); out.style.display=''; }
+               out.innerHTML=aiHtml(acc); toBottom(); },
+          t=>{ thought+=t; think.textContent=thought.slice(-220); toBottom(); },
+          abort.signal);
+        think.remove();
+        const c=aiCost(r.usage); if(c) spent+=c; showCost();
+        if(r.text.trim()){ out.innerHTML=aiHtml(r.text); said+=(said?'\n\n':'')+r.text; }
+        else out.remove();
+        const calls=r.blocks.filter(b=>b.type==='tool_use');
+        if(!calls.length||r.stop!=='tool_use'){
+          if(r.blocks.length) msgs.push({role:'assistant',content:r.blocks});
+          break;
+        }
+        msgs.push({role:'assistant',content:r.blocks});
+        const results=[];
+        for(const call of calls){
+          let res='Unknown tool.';
+          if(call.name==='remember'){
+            res=await aiRemember(call.input.fact);
+            facts=await aiFacts();
+            noteSaved(call.input.fact);
+          }
+          results.push({type:'tool_result', tool_use_id:call.id, content:res});
+        }
+        msgs.push({role:'user',content:results});
+        toBottom();
+      }
+      if(!said.trim()) bubble('err','The coach returned nothing. Try asking again.');
+      await remember(said);
     }catch(e){
-      think.remove(); out.remove();
-      /* an unanswered question is not history: take it back out and hand it to him again */
-      msgs.pop();
+      wrap.querySelectorAll('.think').forEach(n=>n.remove());
+      /* an unanswered question is not history: unwind back to before he asked */
+      msgs.length=mark;
+      while(wrap.lastElementChild&&!wrap.lastElementChild.classList.contains('me')) wrap.lastElementChild.remove();
       if(wrap.lastElementChild&&wrap.lastElementChild.classList.contains('me')) wrap.lastElementChild.remove();
       ta.value=text; grow();
       bubble('err',e instanceof AiError?e.friendly():
@@ -2329,8 +2449,29 @@ async function viewCoach(M,arg){
   sendB.onclick=()=>ask(ta.value);
   ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(ta.value); } };
 
-  /* open with the reading he came for, without making him type it */
-  ask('Give me your read: how am I tracking, and what should I focus on next?');
+  /* Reopening starts a fresh conversation, so it opens by asking what he wants
+     rather than dropping him into a stale thread or firing a report at him. The
+     greeting is worked out here, not by the model, so it costs nothing and is
+     instant — he may only have come to ask one thing. */
+  const last=sessions.length?sessions[sessions.length-1].date:null;
+  const since=last?S.entries.filter(e=>e.date>last&&e.type==='workout').length:0;
+  const hi=!last ? 'Ready when you are — I’ve read everything in the app.'
+    : since ? 'Welcome back. '+since+' session'+(since===1?'':'s')+' since we last spoke on '+fmtDate(last)+'.'
+            : 'Welcome back. Nothing new logged since '+fmtDate(last)+'.';
+  const open=bubble('ai',hi+'\n\nWhat do you want to look at?');
+  const chips=document.createElement('div');
+  chips.className='chips'; chips.id='askChips';
+  [['How am I tracking?','Give me your read: how am I tracking?'],
+   ['What should I focus on?','What should I focus on next? Be specific.'],
+   ['Write me a home session','Write me a session I can do at home this week.'],
+   ['Something else','']].forEach(([label,q])=>{
+    const b=document.createElement('button'); b.className='chip-ask'; b.textContent=label;
+    b.onclick=()=>{ if(q) ask(q); else { chips.remove(); ta.focus(); } };
+    chips.appendChild(b);
+  });
+  wrap.appendChild(chips);
+  /* the greeting stays on screen only — a conversation whose first message is an
+     assistant turn is rejected by the API, and it says nothing worth sending */
 }
 let coachCleanup=null;
 
@@ -2736,8 +2877,9 @@ async function exportData(){
   /* the background note is his writing and worth keeping; the API key is a live
      credential and must never travel in a file that gets emailed around */
   const about=(await kvGet('aiAbout'))||'';
+  const facts=await aiFacts();
   const payload={app:'shoulder-trainer', version:1, exportedAt:new Date().toISOString(),
-    templates:S.templates, entries:S.entries, about};
+    templates:S.templates, entries:S.entries, about, facts};
   const json=JSON.stringify(payload,null,1);
   const name='shoulder-trainer-backup-'+todayStr()+'.json';
   const file=new File([json],name,{type:'application/json'});
@@ -2757,6 +2899,7 @@ async function importData(ev){
   if(!confirm('Import backup from '+(data.exportedAt||'unknown date').slice(0,10)+'?\nThis REPLACES your exercises and all '+S.entries.length+' current entries with the '+data.entries.length+' entries in the backup.')) return;
   await kvSet('templates',data.templates);
   if(typeof data.about==='string') await kvSet('aiAbout',data.about);
+  if(Array.isArray(data.facts)) await kvSet('aiFacts',data.facts);
   await tx('entries','readwrite',s=>{ s.clear(); for(const e of data.entries) s.put(e); });
   await loadState(); toast('Backup imported'); nav('home'); render();
 }
