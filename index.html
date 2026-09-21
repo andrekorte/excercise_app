@@ -215,8 +215,9 @@ nav.tabs{
   display:flex; background:var(--page); border-top:1px solid var(--ring);
   padding:6px 0 calc(6px + env(safe-area-inset-bottom));
 }
-nav.tabs a{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
-  text-decoration:none; color:var(--muted); font-size:10.5px; font-weight:600; padding:5px 0 3px; letter-spacing:.02em}
+nav.tabs a{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0;
+  text-decoration:none; color:var(--muted); font-size:10.5px; font-weight:600; padding:5px 0 3px;
+  letter-spacing:.02em; white-space:nowrap}
 nav.tabs a svg{display:block}
 nav.tabs a.active{color:var(--accent)}
 
@@ -355,12 +356,13 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
   <a href="#home" data-tab="home"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10.5 9-7.5 9 7.5"/><path d="M5 9.6V21h14V9.6"/></svg>Home</a>
   <a href="#progress" data-tab="progress"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="m7.5 14 4-4.5 3 3L20 6.5"/></svg>Progress</a>
   <a href="#settings" data-tab="settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8v8M3.5 10v4M17 8v8M20.5 10v4M7 12h10"/></svg>Exercises</a>
+  <a href="#coach" data-tab="coach"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z"/></svg>Coach</a>
 </nav>
 <div class="toast" id="toast"></div>
 
 <script>
 'use strict';
-const APP_VER='v34';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v35';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -726,11 +728,9 @@ function viewHome(M){
       <button class="btn secondary" id="bInj"><span class="chip injury">${ico('alert',15)}</span> Injury Break</button>
     </div>
     <button class="btn secondary" id="bMed"><span class="chip med">${ico('lotus',15)}</span> Meditation</button>
-    <button class="btn secondary" id="bAI"><span class="chip ai">${ico('spark',15)}</span> Fitness coach</button>
     <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
     <div id="feed"></div>`;
   $('#bCap').onclick=()=>nav('capture');
-  $('#bAI').onclick=()=>nav('coach');
   $('#bPhy').onclick=()=>nav('physio');
   $('#bMed').onclick=()=>nav('meditate');
   $('#bInj').onclick=()=>nav('injury');
@@ -2149,7 +2149,7 @@ function aiHtml(t){
 
 /* ---- setup: the key and the once-off background note ---- */
 function viewCoachSetup(M,key,about,brief,back){
-  setBar('Fitness coach','home'); setTab('home');
+  setBar('Fitness coach','home'); setTab('coach');
   M.innerHTML=`
     <p class="cue" style="margin:0 2px 12px">The coach reads everything in this app — sessions, loads, reps,
       your notes, swims, rides, meditation — and answers as a coach would. It runs on your own
@@ -2196,7 +2196,7 @@ What you are trying to get back to, and anything else — sleep, work, other con
 
 /* ---- past readings ---- */
 function viewCoachLog(M,sessions){
-  setBar('Past readings','coach'); setTab('home');
+  setBar('Past readings','coach'); setTab('coach');
   if(!sessions.length){ M.innerHTML='<p class="empty">No readings yet.</p>'; return; }
   M.innerHTML='';
   [...sessions].reverse().forEach((s,i)=>{
@@ -2212,7 +2212,7 @@ function viewCoachLog(M,sessions){
 
 /* ---- the conversation ---- */
 async function viewCoach(M,arg){
-  setTab('home');
+  setTab('coach');
   const key=await aiKey();
   const about=await aiAbout();
   const brief=await aiBrief();
