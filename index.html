@@ -374,7 +374,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v37';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v38';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -2009,7 +2009,12 @@ function viewMeditate(M,editId){
    keeps the repeat cost of that down to a tenth. */
 const AI_MODEL='claude-opus-5';
 const AI_URL='https://api.anthropic.com/v1/messages';
-const AI_MAXSESS=20;                 /* readings kept on the phone */
+const AI_MAXSESS=20;                 /* conversations kept on the phone */
+/* A conversation stays open for a day of not being touched. Long enough that
+   ducking out to check the exercise list and coming back continues where he
+   left off; short enough that it never becomes the endless thread where old
+   chat crowds out the training data. */
+const AI_RESUME_MS=24*60*60*1000;
 
 const aiKey=()=>kvGet('aiKey');
 const aiAbout=()=>kvGet('aiAbout').then(v=>v||'');
@@ -2288,16 +2293,25 @@ async function paintFacts(){
 
 /* ---- past readings ---- */
 function viewCoachLog(M,sessions){
-  setBar('Past readings','coach'); setTab('coach');
-  if(!sessions.length){ M.innerHTML='<p class="empty">No readings yet.</p>'; return; }
+  setBar('Past conversations','coach'); setTab('coach');
+  if(!sessions.length){ M.innerHTML='<p class="empty">No conversations yet.</p>'; return; }
   M.innerHTML='';
   [...sessions].reverse().forEach((s,i)=>{
+    const idx=sessions.length-1-i;
+    const turns=(s.msgs||[]).filter(m=>m.role==='user'&&typeof m.content==='string').length;
     const c=document.createElement('div'); c.className='card tappable';
     c.innerHTML=`<div class="cardhead"><span class="badge ai">${ico('spark',15)}</span>`+
       `<span class="date">${esc(fmtDate(s.date))}</span><span class="spacer"></span>`+
+      `<button class="iconbtn drop" title="Delete">${ico('x',15)}</button>`+
       `<span class="chev">${ico('chevR',16)}</span></div>`+
-      `<div class="cardsub">${esc(s.gist||'(no summary)')}</div>`;
-    c.onclick=()=>nav('coach/'+(sessions.length-1-i));
+      `<div class="cardsub">${turns} question${turns===1?'':'s'} · ${esc(s.gist||'no summary')}</div>`;
+    c.onclick=()=>nav('coach/'+idx);
+    c.querySelector('.drop').onclick=async(ev)=>{
+      ev.stopPropagation();
+      if(!confirm('Delete this conversation?')) return;
+      const all=await aiSessions(); all.splice(idx,1);
+      await kvSet('aiSessions',all); rerender();
+    };
     M.appendChild(c);
   });
 }
@@ -2320,10 +2334,14 @@ async function viewCoach(M,arg){
   }
 
   const past=arg!=null&&sessions[+arg]?sessions[+arg]:null;   /* reading an old one */
+  /* the newest conversation, if he was in it within the last day */
+  const newest=sessions.length?sessions[sessions.length-1]:null;
+  const live=(!past&&arg!=='new'&&newest&&newest.msgs&&newest.msgs.length&&
+    (Date.now()-(newest.at||0))<AI_RESUME_MS) ? newest : null;
   setBar(past?'Reading · '+fmtDate(past.date):'Fitness coach','home');
-  /* a fresh conversation each time, so today's data leads and old chat never crowds it out */
-  let msgs=past?past.msgs.slice():[];
-  let busy=false, abort=null, spent=past?past.cost||0:0;
+  const src=past||live;
+  let msgs=src?src.msgs.slice():[];
+  let busy=false, abort=null, spent=src?src.cost||0:0;
 
   M.innerHTML=`<div id="chatwrap"></div>
     ${past?'<button class="btn secondary" id="bNew" style="margin-top:14px">Start a new reading</button>':`
@@ -2335,13 +2353,15 @@ async function viewCoach(M,arg){
     </div>
     <p class="costline" id="costLine"></p>`}
     <div class="btnrow" style="margin-top:14px">
-      <button class="btn secondary small" id="bLog">Past readings${sessions.length?' · '+sessions.length:''}</button>
+      ${live?'<button class="btn secondary small" id="bFresh">New conversation</button>':''}
+      <button class="btn secondary small" id="bLog">Past${sessions.length?' · '+sessions.length:''}</button>
       <button class="btn secondary small" id="bCfg">Settings</button>
     </div>`;
   const wrap=$('#chatwrap');
   $('#bLog').onclick=()=>nav('coach/log');
   $('#bCfg').onclick=()=>nav('coach/setup');
-  if($('#bNew')) $('#bNew').onclick=()=>nav('coach');
+  if($('#bNew')) $('#bNew').onclick=()=>nav('coach/new');
+  if($('#bFresh')) $('#bFresh').onclick=()=>nav('coach/new');
 
   const noteSaved=(fact)=>{
     const d=document.createElement('div'); d.className='saved';
@@ -2363,8 +2383,11 @@ async function viewCoach(M,arg){
     const top=el.getBoundingClientRect().top+window.scrollY-((bar?bar.offsetHeight:0)+10);
     window.scrollTo({top:Math.max(0,top),behavior:'smooth'});
   };
-  for(const m of msgs) bubble(m.role==='user'?'me':'ai',
-    typeof m.content==='string'?m.content:m.content.map(c=>c.text||'').join(''));
+  for(const m of msgs){
+    const txt=typeof m.content==='string'?m.content
+      :m.content.filter(c=>c.type==='text').map(c=>c.text).join('');
+    if(txt.trim()) bubble(m.role==='user'?'me':'ai',txt);
+  }
   if(past) return;
 
   const costLine=$('#costLine');
@@ -2454,17 +2477,17 @@ async function viewCoach(M,arg){
 
   /* keep a one-line gist so the next reading knows what this one concluded —
      taken from the opening read, not from whatever the last follow-up happened to say */
-  let gist='';
+  let gist=live?(live.gist||''):'';
   async function remember(full){
     if(!gist) gist=(full.split('\n').find(l=>l.trim()&&!l.startsWith('#'))||'')
       .replace(/\*\*/g,'').trim().slice(0,220);
     const all=await aiSessions();
-    const mine={id:sessionId, date:todayStr(), gist, cost:spent, msgs};
+    const mine={id:sessionId, date:todayStr(), at:Date.now(), gist, cost:spent, msgs};
     const i=all.findIndex(s=>s.id===sessionId);
     if(i>=0) all[i]=mine; else all.push(mine);
     await aiSaveSessions(all);
   }
-  const sessionId=uid();
+  const sessionId=live?live.id:uid();
 
   sendB.onclick=()=>ask(ta.value);
   ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(ta.value); } };
@@ -2473,11 +2496,19 @@ async function viewCoach(M,arg){
      rather than dropping him into a stale thread or firing a report at him. The
      greeting is worked out here, not by the model, so it costs nothing and is
      instant — he may only have come to ask one thing. */
-  const last=sessions.length?sessions[sessions.length-1].date:null;
+  /* picking up a live thread needs no introduction — he was just here */
+  if(live){
+    const lastAi=[...wrap.querySelectorAll('.bub.ai')].pop();
+    if(lastAi) requestAnimationFrame(()=>anchor(lastAi));
+    return;
+  }
+  const last=newest?newest.date:null;
   const since=last?S.entries.filter(e=>e.date>last&&e.type==='workout').length:0;
+  const gap=last?Math.round((new Date(todayStr())-new Date(last))/864e5):0;
+  const when=gap===0?'earlier today':gap===1?'yesterday':'on '+fmtDate(last);
   const hi=!last ? 'Ready when you are — I’ve read everything in the app.'
-    : since ? 'Welcome back. '+since+' session'+(since===1?'':'s')+' since we last spoke on '+fmtDate(last)+'.'
-            : 'Welcome back. Nothing new logged since '+fmtDate(last)+'.';
+    : since ? 'Welcome back. '+since+' session'+(since===1?'':'s')+' logged since we spoke '+when+'.'
+            : 'Welcome back. Nothing new logged since we spoke '+when+'.';
   const open=bubble('ai',hi+'\n\nWhat do you want to look at?');
   const chips=document.createElement('div');
   chips.className='chips'; chips.id='askChips';
