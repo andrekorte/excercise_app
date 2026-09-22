@@ -301,6 +301,17 @@ details.datatable td:last-child,details.datatable th:last-child{text-align:right
 
 /* ================= fitness coach ================= */
 .chip.ai,.badge.ai{background:var(--tint-ai-bg); color:var(--tint-ai-ink)}
+.aicard{background:var(--surface); border-radius:12px; padding:12px 14px; margin-bottom:12px;
+  box-shadow:inset 0 0 0 1px var(--ring), var(--shadow)}
+.aicard .aihead{display:flex; align-items:center; gap:9px; font-size:14px; font-weight:650; color:var(--ink)}
+.aicard .aihead .spacer{flex:1}
+.aicard .aiask{border:0; border-radius:999px; padding:7px 15px; font-family:inherit; font-size:13.5px;
+  font-weight:650; background:var(--tint-ai-bg); color:var(--tint-ai-ink); cursor:pointer; flex:none}
+.aicard .ainope{border:0; background:none; color:var(--muted); font-family:inherit; font-size:13px;
+  padding:7px 4px; cursor:pointer; flex:none}
+.aicard .aiout{font-size:14.5px; line-height:1.5; white-space:pre-wrap; margin-top:9px; color:var(--ink)}
+.aicard .aiout:empty{display:none}
+.aicard.err .aiout{color:var(--tint-i-ink)}
 .chips{display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 4px}
 .chip-ask{border:0; border-radius:999px; padding:10px 15px; font-family:inherit; font-size:14px;
   font-weight:600; background:var(--surface); color:var(--accent);
@@ -374,7 +385,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v38';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v39';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -730,6 +741,7 @@ function render(){
 }
 
 /* ================= views ================= */
+let justSaved=null;          /* set by a save, consumed by the next home screen */
 function viewHome(M){
   setBar('Shoulder Trainer'); setTab('home');
   const wc=weekCount();
@@ -743,6 +755,17 @@ function viewHome(M){
     <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
     <div id="feed"></div>`;
   $('#bCap').onclick=()=>nav('capture');
+  if(justSaved){
+    const js=justSaved; justSaved=null;
+    quickReady().then(ok=>{
+      if(!ok||location.hash.replace(/^#/,'')!=='home'&&location.hash!=='') return;
+      const t=S.templates[js.session];
+      quickCard($('#feed').parentNode,'Feedback on that session?',
+        'I have just finished '+(t?t.name:'Session '+js.session)+' — it is in the data, dated '+
+        todayStr()+'. How did it go against the last few, and what should I change next time?','Yes')
+        .style.marginTop='4px';
+    });
+  }
   $('#bPhy').onclick=()=>nav('physio');
   $('#bMed').onclick=()=>nav('meditate');
   $('#bInj').onclick=()=>nav('injury');
@@ -1034,6 +1057,16 @@ function viewCapture(M,sessionKey,editId){
     $('#fNote').oninput=saveDraftNow;
     $('#fDate').onchange=saveDraftNow;
   }
+  /* a word before he starts, offered rather than forced */
+  if(!isEdit) quickReady().then(ok=>{
+    if(!ok||location.hash.indexOf('capture/')<0) return;
+    const t=S.templates[sessionKey];
+    quickCard($('#main'),'Anything to watch for today?',
+      'I am about to do '+(t?t.name:'Session '+sessionKey)+'. Looking at how my last few '+
+      (t?t.name:sessionKey)+' sessions went and anything I noted about them, what should I push '+
+      'and what should I be careful with today?','Yes');
+  });
+
   if(isEdit) $('#bAddEx').onclick=()=>{
     const present=new Set(entry.exercises.map(x=>x.name)), seen=new Set(), opts=[];
     for(const k of ['A','B','C']) for(const e of S.templates[k].exercises)
@@ -1083,6 +1116,8 @@ function viewCapture(M,sessionKey,editId){
     await syncDefaults(chosen);
     clearDraft(); draftFlush=null;
     toast('Workout saved');
+    /* offered on the home screen he lands on, so saving stays one tap */
+    justSaved={id:b.id, session:sessionKey};
     nav('home');
   };
   formBar(isEdit?'Edit Workout':'Session '+sessionKey, isEdit?('entry/'+editId):'capture', doSave);
@@ -2135,7 +2170,8 @@ function coachSystem(about,sessions,brief,facts){
 }
 
 /* ---- the call. Streamed, because a chat that freezes for twenty seconds reads as broken ---- */
-async function aiStream(key,system,messages,onText,onThink,signal){
+async function aiStream(key,system,messages,onText,onThink,signal,opts){
+  const o=opts||{};
   const res=await fetch(AI_URL,{
     method:'POST', signal,
     headers:{
@@ -2146,11 +2182,11 @@ async function aiStream(key,system,messages,onText,onThink,signal){
       'anthropic-dangerous-direct-browser-access':'true'
     },
     body:JSON.stringify({
-      model:AI_MODEL, max_tokens:8000, stream:true,
+      model:AI_MODEL, max_tokens:o.maxTokens||8000, stream:true,
       thinking:{type:'adaptive', display:'summarized'},
       /* medium effort: less preamble and a faster first word, which is what a
          chat wants — he can always push for more depth in the next message */
-      output_config:{effort:'medium'},
+      output_config:{effort:o.effort||'medium'},
       tools:AI_TOOLS, system, messages
     })
   });
@@ -2221,6 +2257,41 @@ function aiHtml(t){
     .replace(/^## (.+)$/gm,'<span class="h">$1</span>')
     .replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');
 }
+
+/* A word before a session and a word after it. Deliberately tiny: he is in the
+   gym, not reading. These reuse the coach's system prompt byte for byte, so they
+   land on its cached prefix — which is why they are quick and cost next to
+   nothing — and the brevity is asked for in the question instead. */
+const QUICK_CAP=' Three short sentences at most, 60 words. No greeting, no preamble, no list, no sign-off.';
+function quickCard(host,label,question,cta){
+  const card=document.createElement('div'); card.className='aicard';
+  card.innerHTML=`<div class="aihead">${ico('spark',15)}<span>${esc(label)}</span><span class="spacer"></span>`+
+    `<button class="ainope">Not now</button><button class="aiask">${esc(cta)}</button></div>`+
+    `<div class="aiout"></div>`;
+  const out=card.querySelector('.aiout');
+  card.querySelector('.ainope').onclick=()=>card.remove();
+  card.querySelector('.aiask').onclick=async()=>{
+    const head=card.querySelector('.aihead');
+    head.querySelector('.aiask').remove(); head.querySelector('.ainope').remove();
+    out.innerHTML='<span class="dots"><i></i><i></i><i></i></span>';
+    try{
+      const key=await aiKey(); if(!key) throw new Error('No API key saved yet.');
+      const system=coachSystem(await aiAbout(),await aiSessions(),await aiBrief(),await aiFacts());
+      let acc='';
+      const r=await aiStream(key,system,[{role:'user',content:question+QUICK_CAP}],
+        t=>{ acc+=t; out.innerHTML=aiHtml(acc); },null,null,{maxTokens:700,effort:'low'});
+      out.innerHTML=aiHtml(r.text.trim()||'Nothing to add.');
+    }catch(e){
+      card.classList.add('err');
+      out.textContent=e instanceof AiError?e.friendly()
+        :(navigator.onLine?'Could not reach the coach: '+e.message:'No connection — this bit needs the internet.');
+    }
+  };
+  host.prepend(card);
+  return card;
+}
+/* only worth offering once there is a key and something to look back on */
+const quickReady=async()=>!!(await aiKey())&&S.entries.some(e=>e.type==='workout');
 
 /* ---- setup: the key and the once-off background note ---- */
 function viewCoachSetup(M,key,about,brief,back){
