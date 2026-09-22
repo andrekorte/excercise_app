@@ -374,7 +374,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v36';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v37';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -2096,7 +2096,9 @@ How to be useful:
 
 Where the line is: for all the shoulder expertise above, you are not his physiotherapist, and you are not examining him. You can read loads, reps, dates and his notes. You cannot see his shoulder, feel how it moves, or know what his physio has found beyond what he has written below. Give him your opinion on loads, volume, consistency and patterns — that is the job. When something looks like pain, a regression, or a call that belongs to a clinician, say so plainly and tell him to put it to his physio; then still give him your read, because he asked for it.
 
-Style: talk to him, not about him. Short paragraphs, plain sentences. No bullet-point avalanche, no bold heading on every line, no management-speak. If he pushes back or asks what you meant, answer the question he actually asked.
+Length: answer the question and stop. This is a conversation on a phone, not a report. A couple of sentences is often the whole answer; three short paragraphs is a long one. Do not restate his question back to him, do not open with a preamble, do not close with a summary of what you just said, and do not add a section he did not ask for. If there is more worth saying, say so in a few words and let him ask — that is what the back-and-forth is for. Being asked to expand is a good outcome; being skimmed is not.
+
+Style: talk to him, not about him. Plain sentences. No bullet-point avalanche, no bold heading on every line, no management-speak. If he pushes back or asks what you meant, answer that question and only that question.
 
 You may use a line starting with "## " as a short heading where it genuinely helps, and **bold** sparingly. Nothing else — no tables, no code blocks, no nested lists.`;
 
@@ -2141,6 +2143,9 @@ async function aiStream(key,system,messages,onText,onThink,signal){
     body:JSON.stringify({
       model:AI_MODEL, max_tokens:8000, stream:true,
       thinking:{type:'adaptive', display:'summarized'},
+      /* medium effort: less preamble and a faster first word, which is what a
+         chat wants — he can always push for more depth in the next message */
+      output_config:{effort:'medium'},
       tools:AI_TOOLS, system, messages
     })
   });
@@ -2348,8 +2353,16 @@ async function viewCoach(M,arg){
     if(cls==='ai') d.innerHTML=aiHtml(txt||''); else d.textContent=txt||'';
     wrap.appendChild(d); return d;
   };
-  const toBottom=()=>{ const h=document.scrollingElement;
-    window.scrollTo({top:h.scrollHeight,behavior:'smooth'}); };
+  /* Chasing the bottom of a streaming answer makes it unreadable — the text
+     arrives faster than anyone reads, so the start scrolls away before he gets
+     to it. Instead each new answer is parked with its first line just under the
+     app bar, once, and then the page stays put while it fills in downwards. */
+  const anchor=(el)=>{
+    if(!el) return;
+    const bar=document.querySelector('header.appbar');
+    const top=el.getBoundingClientRect().top+window.scrollY-((bar?bar.offsetHeight:0)+10);
+    window.scrollTo({top:Math.max(0,top),behavior:'smooth'});
+  };
   for(const m of msgs) bubble(m.role==='user'?'me':'ai',
     typeof m.content==='string'?m.content:m.content.map(c=>c.text||'').join(''));
   if(past) return;
@@ -2373,8 +2386,9 @@ async function viewCoach(M,arg){
     const chips=$('#askChips'); if(chips) chips.remove();
     const mark=msgs.length;
     msgs.push({role:'user',content:text});
-    bubble('me',text);
-    ta.value=''; grow(); toBottom();
+    const mine=bubble('me',text);
+    ta.value=''; grow();
+    anchor(mine);                       /* his question to the top; the answer grows below it */
 
     abort=new AbortController();
     try{
@@ -2389,9 +2403,16 @@ async function viewCoach(M,arg){
         let acc='', thought='';
         const r=await aiStream(key,coachSystem(about,sessions,brief,facts),
           msgs.map(m=>({role:m.role,content:m.content})),
-          t=>{ acc+=t; if(out.style.display==='none'){ think.remove(); out.style.display=''; }
-               out.innerHTML=aiHtml(acc); toBottom(); },
-          t=>{ thought+=t; think.textContent=thought.slice(-220); toBottom(); },
+          t=>{ acc+=t;
+               if(out.style.display==='none'){ think.remove(); out.style.display='';
+                 /* his question is already at the top and the answer starts just
+                    below it, so normally nothing needs to move. Only if the answer
+                    would begin off-screen — a long question, a long tool exchange —
+                    does it get pulled up. Once, never again while it writes. */
+                 const t=out.getBoundingClientRect().top;
+                 if(round>0||t>innerHeight-90) anchor(out); }
+               out.innerHTML=aiHtml(acc); },
+          t=>{ thought+=t; think.textContent=thought.slice(-220); },
           abort.signal);
         think.remove();
         const c=aiCost(r.usage); if(c) spent+=c; showCost();
@@ -2414,7 +2435,6 @@ async function viewCoach(M,arg){
           results.push({type:'tool_result', tool_use_id:call.id, content:res});
         }
         msgs.push({role:'user',content:results});
-        toBottom();
       }
       if(!said.trim()) bubble('err','The coach returned nothing. Try asking again.');
       await remember(said);
@@ -2429,7 +2449,7 @@ async function viewCoach(M,arg){
         (navigator.onLine?'Could not reach the API: '+e.message
                          :'No connection — the coach needs the internet. Everything else still works offline.'));
     }
-    busy=false; sendB.disabled=false; toBottom();
+    busy=false; sendB.disabled=false;
   }
 
   /* keep a one-line gist so the next reading knows what this one concluded —
