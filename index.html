@@ -385,7 +385,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v39';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v40';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -1061,7 +1061,7 @@ function viewCapture(M,sessionKey,editId){
   if(!isEdit) quickReady().then(ok=>{
     if(!ok||location.hash.indexOf('capture/')<0) return;
     const t=S.templates[sessionKey];
-    quickCard($('#main'),'Anything to watch for today?',
+    quickCard($('#main'),'Get coach advice for the session',
       'I am about to do '+(t?t.name:'Session '+sessionKey)+'. Looking at how my last few '+
       (t?t.name:sessionKey)+' sessions went and anything I noted about them, what should I push '+
       'and what should I be careful with today?','Yes');

@@ -4,7 +4,7 @@
    online always lands on the current build; the cached copy is the fallback
    when there is no network. Everything else stays cache-first, which is what
    makes the app usable with no signal. */
-const VERSION = 'v39';
+const VERSION = 'v40';
 const CACHE = 'shoulder-trainer-' + VERSION;
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
