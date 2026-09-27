@@ -29,6 +29,7 @@
   --tint-k-bg:#fbe9f0; --tint-k-ink:#a53a68;
   --tint-m-bg:#eceafa; --tint-m-ink:#4a3aa7;
   --tint-ai-bg:#e4f0f6; --tint-ai-ink:#14607f;
+  --tint-bp-bg:#fae9ec; --tint-bp-ink:#a3283f;
   --warn:#b98200; --warn-bg:#fdf3da;
   --shadow:0 1px 2px rgba(20,20,18,.05);
 }
@@ -255,6 +256,8 @@ details.datatable td,details.datatable th{padding:5px 6px; border-top:1px solid 
   font-family:inherit; font-size:14px; font-weight:650; white-space:nowrap;
   box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer}
 .lvbtn.on{background:var(--tint-c-bg); color:var(--tint-c-ink); box-shadow:none}
+/* three labels on one line needs a little less type than two */
+.levelseg.tight .lvbtn{font-size:12.5px; padding:0 7px}
 .medq{display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid var(--grid); font-weight:600}
 .medq:first-child{border-top:0; padding-top:2px}
 .medq span{flex:1}
@@ -301,6 +304,11 @@ details.datatable td:last-child,details.datatable th:last-child{text-align:right
 
 /* ================= fitness coach ================= */
 .chip.ai,.badge.ai{background:var(--tint-ai-bg); color:var(--tint-ai-ink)}
+.chip.bp,.badge.bp{background:var(--tint-bp-bg); color:var(--tint-bp-ink)}
+.bprow{display:flex; gap:8px}
+.bprow .ctl{flex:1; min-width:0}
+.shot{display:flex; gap:8px; align-items:center; margin-bottom:12px}
+.shot .btn{margin:0}
 .aicard{background:var(--surface); border-radius:12px; padding:12px 14px; margin-bottom:12px;
   box-shadow:inset 0 0 0 1px var(--ring), var(--shadow)}
 .aicard .aihead{display:flex; align-items:center; gap:9px; font-size:14px; font-weight:650; color:var(--ink)}
@@ -385,7 +393,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v41';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v42';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -659,6 +667,8 @@ const ICONS={
   x:'<path d="M18 6 6 18M6 6l12 12"/>',
   check:'<path d="m5 13 4.5 4.5L19 7"/>',
   waves:'<path d="M2 7.5c2.5-2 4.5 2 7 0s4.5-2 7 0 4.5 2 6 .5"/><path d="M2 13c2.5-2 4.5 2 7 0s4.5-2 7 0 4.5 2 6 .5"/><path d="M2 18.5c2.5-2 4.5 2 7 0s4.5-2 7 0 4.5 2 6 .5"/>',
+  heart:'<path d="M12 20s-7-4.5-7-9.5A4 4 0 0 1 12 7a4 4 0 0 1 7 3.5C19 15.5 12 20 12 20z"/>',
+  camera:'<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/>',
   spark:'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z"/>',
   send:'<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
   mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
@@ -735,6 +745,8 @@ function render(){
     if(parts[0]==='run') return viewSimple(M,'run',parts[1]||null);
     if(parts[0]==='swim') return viewSwim(M,parts[1]||null);
     if(parts[0]==='bike') return viewBike(M,parts[1]||null);
+    if(parts[0]==='bp') return viewBP(M,parts[1]||null);
+    if(parts[0]==='bplog') return viewBPLog(M,parts[1]||null);
     if(parts[0]==='meditate') return viewMeditate(M,parts[1]||null);
     if(parts[0]==='medlog') return viewMedLog(M,parts[1]||null);
     if(parts[0]==='coach') return viewCoach(M,parts[1]||null)
@@ -814,7 +826,8 @@ function viewHome(M){
   });
   if(!S.entries.length){ feed.innerHTML='<p class="empty">Nothing here yet.<br>Capture your first workout above.</p>'; return; }
   for(const e of S.entries){
-    if(e.type==='meditation') continue;   /* tracked under Progress, not on the timeline */
+    /* tracked under Progress, not on the timeline */
+    if(e.type==='meditation'||e.type==='bp') continue;
     const c=document.createElement('div'); c.className='card tappable';
     let badge,sub;
     if(e.type==='workout'){
@@ -861,9 +874,10 @@ function viewPick(M){
   M.insertAdjacentHTML('beforeend','<div class="pickdiv"><span>Other activity</span></div>');
   [['swim','waves','Swimming','laps and stroke'],
    ['run','run','Run','distance lives in Runkeeper'],
-   ['bike','bike','Bike ride','distance in km']].forEach(([route,icon,name,sub])=>{
+   ['bike','bike','Bike ride','distance in km'],
+   ['bp','heart','Blood pressure','photograph the monitor or type it in']].forEach(([route,icon,name,sub])=>{
     const b=document.createElement('button'); b.className='pickbtn activity';
-    b.innerHTML=`<span class="chip ${route==='swim'?'swim':route}">${ico(icon,17)}</span>
+    b.innerHTML=`<span class="chip ${route}">${ico(icon,17)}</span>
       <span class="pickmain"><span class="pickname">${esc(name)}</span><br>
       <span class="picksub">${esc(sub)}</span></span>`;
     b.onclick=()=>nav(route);
@@ -1284,6 +1298,16 @@ function viewDetail(M,id){
       ${e.comments?'<div class="card"><div class="cue" style="margin:0 0 4px">Note</div><div class="note-inline">'+esc(e.comments)+'</div></div>':''}
       <div class="btnrow"><button class="btn secondary" id="bEdit">Edit</button><button class="btn danger" id="bDel">Delete</button></div>`;
     $('#bEdit').onclick=()=>nav('bike/'+e.id);
+  } else if(e.type==='bp'){
+    setBar('Blood pressure · '+fmtDate(e.date),'bplog');
+    M.innerHTML=`<div class="card"><table class="dtl">
+        <tr><td>Blood pressure</td><td class="num">${e.sys} / ${e.dia}</td></tr>
+        ${e.pulse?`<tr><td>Pulse</td><td class="num">${e.pulse} bpm</td></tr>`:''}
+        <tr><td>Time</td><td class="num">${esc(e.time||'—')}</td></tr>
+        <tr><td>When in the day</td><td class="num">${esc(bpTagName(e.tag))}</td></tr></table></div>
+      ${e.comments?'<div class="card"><div class="cue" style="margin:0 0 4px">Note</div><div class="note-inline">'+esc(e.comments)+'</div></div>':''}
+      <div class="btnrow"><button class="btn secondary" id="bEdit">Edit</button><button class="btn danger" id="bDel">Delete</button></div>`;
+    $('#bEdit').onclick=()=>nav('bp/'+e.id);
   } else if(e.type==='meditation'){
     const pts=e.points||medPoints(e);
     setBar('Meditation · '+fmtDate(e.date),'medlog');
@@ -1311,7 +1335,7 @@ function viewDetail(M,id){
   }
   $('#bDel').onclick=async()=>{
     if(!confirm('Delete this entry? This cannot be undone.')) return;
-    const back=e.type==='meditation'?'medlog':'home';
+    const back=e.type==='meditation'?'medlog':(e.type==='bp'?'bplog':'home');
     await deleteEntry(id); toast('Deleted'); nav(back);
   };
 }
@@ -1528,6 +1552,15 @@ function progressSeries(){
     }
   }
   for(const [k,a] of lvlBy) map.set(k,a);
+  /* one line for systolic, one for diastolic on the same scale, pulse on its own */
+  const bps=[...S.entries].filter(e=>e.type==='bp'&&e.sys!=null&&e.dia!=null)
+    .sort((a,b)=>a.date.localeCompare(b.date)||(a.time||'').localeCompare(b.time||''));
+  if(bps.length){
+    const a=[]; a.unit='mmHg'; a.pair='diastolic'; a.second='bpm';
+    bps.forEach(e=>a.push({date:e.date, value:e.sys, low:e.dia,
+      reps:e.pulse==null?null:e.pulse, time:e.time||'', tag:bpTagName(e.tag)}));
+    map.set('Blood pressure',a);
+  }
   const meds=S.entries.filter(e=>e.type==='meditation');
   if(meds.length){
     const byDay=new Map();
@@ -1612,33 +1645,44 @@ function startCellEdit(btn,series){
 function chartBox(name,pts){
   const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative'; box.style.marginBottom='10px';
   const isLevel=pts.unit==='level';
+  const isPair=!!pts.pair;                       /* two lines sharing one scale */
   const unit=pts.unit?pts.unit:(pts[0].kind==='bandKg'?'kg band':'kg');
-  const noun=pts.unit==='laps'?'swim':(pts.unit==='km'?'ride':(pts.unit==='points'?'day':'workout'));
+  const noun=pts.unit==='laps'?'swim':(pts.unit==='km'?'ride'
+    :(pts.unit==='points'?'day':(pts.unit==='mmHg'?'reading':'workout')));
   /* weight and level series both plot the hold or reps on their own right-hand axis */
-  const dual=(!pts.unit||isLevel)&&pts.some(p=>p.reps!=null);
-  const repLabel=pts[0].mode==='secs'?'sec':'reps';
+  const dual=(!pts.unit||isLevel||isPair)&&pts.some(p=>p.reps!=null);
+  const repLabel=isPair?(pts.second||''):(pts[0].mode==='secs'?'sec':'reps');
   const latest=pts[pts.length-1], first=pts[0];
   const delta=Math.round((latest.value-first.value)*100)/100;
-  const head=isLevel
+  const head=isPair
+    ? `latest ${latest.value}/${latest.low} ${unit}${latest.reps!=null?' · '+latest.reps+' '+repLabel:''}`
+    : isLevel
     ? `latest ${esc(latest.levelName)}${latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${
         delta>0?' · ▲ moved up from '+esc(first.levelName):''}`
     : `latest ${latest.value} ${unit}${dual&&latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${
         delta?` · ${delta>0?'▲':'▼'} ${Math.abs(delta)} since first`:''}`;
   box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} ${noun}${pts.length>1?'s':''} · ${head}</div>`;
   if(dual) box.insertAdjacentHTML('beforeend',
-    `<div class="vlegend"><span><i style="background:var(--chart)"></i>${esc(isLevel?'Level':unit)}</span>`+
+    `<div class="vlegend"><span><i style="background:var(--chart)"></i>${esc(isPair?'systolic':(isLevel?'Level':unit))}</span>`+
+    (isPair?`<span><i style="background:var(--chart);opacity:.45"></i>${esc(pts.pair)}</span>`:'')+
     `<span><i style="background:var(--chart2)"></i>${esc(repLabel)}</span></div>`);
-  box.appendChild(buildChart(pts,unit,dual?repLabel:null,isLevel?pts.levels:null));
+  box.appendChild(buildChart(pts,unit,dual?repLabel:null,isLevel?pts.levels:null,isPair));
   const dt=document.createElement('details'); dt.className='datatable';
   const cell=(p,f,v)=>`<td><button class="cellv" data-d="${p.date}" data-f="${f}">${v}</button></td>`;
   /* a level is a name picked during the workout, not a number to overtype */
   const flat=(v)=>`<td>${esc(String(v))}</td>`;
-  dt.innerHTML='<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(isLevel?'Level':unit)+'</th>'+
-    (dual?'<th>'+esc(repLabel)+'</th>':'')+'</tr>'+
-    pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td>${
-      isLevel?flat(p.levelName):cell(p,'value',p.value)}${
-      dual?(isLevel?flat(p.reps==null?'—':p.reps):cell(p,'reps',p.reps==null?'—':p.reps)):''}</tr>`)
-      .reverse().join('')+'</table>';
+  dt.innerHTML=isPair
+    ? '<summary>Show data</summary><table><tr><th>Date</th><th>Time</th><th>When</th><th>'+esc(unit)+
+      '</th><th>'+esc(repLabel)+'</th></tr>'+
+      pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td><td>${esc(p.time||'')}</td>`+
+        `<td>${esc(p.tag||'')}</td>${flat(p.value+'/'+p.low)}${flat(p.reps==null?'—':p.reps)}</tr>`)
+        .reverse().join('')+'</table>'
+    : '<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(isLevel?'Level':unit)+'</th>'+
+      (dual?'<th>'+esc(repLabel)+'</th>':'')+'</tr>'+
+      pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td>${
+        isLevel?flat(p.levelName):cell(p,'value',p.value)}${
+        dual?(isLevel?flat(p.reps==null?'—':p.reps):cell(p,'reps',p.reps==null?'—':p.reps)):''}</tr>`)
+        .reverse().join('')+'</table>';
   dt.open=OPEN_TABLES.has(name);
   dt.ontoggle=()=>{ dt.open?OPEN_TABLES.add(name):OPEN_TABLES.delete(name); };
   /* points are worked out from the two answers, so the cell opens the
@@ -1647,6 +1691,15 @@ function chartBox(name,pts){
   dt.querySelectorAll('.cellv').forEach(btn=>{
     btn.onclick=isMed?()=>nav('medlog/'+btn.dataset.d):()=>startCellEdit(btn,name);
   });
+  if(isPair){
+    dt.querySelectorAll('tbody tr, table tr').forEach((tr,i)=>{
+      if(i===0) return;                                   /* the header */
+      tr.style.cursor='pointer';
+      tr.onclick=()=>nav('bplog');
+    });
+    dt.insertAdjacentHTML('beforeend',
+      '<p class="cue" style="margin:8px 2px 0">Tap a row to open the readings, where you can edit or delete one.</p>');
+  }
   if(isMed) dt.insertAdjacentHTML('beforeend',
     '<p class="cue" style="margin:8px 2px 0">Tap a score to open that day’s sittings, where you can change the answers or delete one.</p>');
   box.appendChild(dt);
@@ -1668,13 +1721,15 @@ function niceAxis(vals,intervals){
   return {lo:mn,hi:mx,step:(mx-mn)/intervals,
     ticks:Array.from({length:intervals+1},(_,i)=>Math.round((mn+i*(mx-mn)/intervals)*100)/100)};
 }
-function buildChart(pts,unit,repLabel,levelNames){
+function buildChart(pts,unit,repLabel,levelNames,pair){
   const dual=!!repLabel&&pts.some(p=>p.reps!=null);
   const lv=levelNames&&levelNames.length>1?levelNames:null;
   const W=520,H=262,padL=lv?96:40,padR=dual?40:14,padT=16,padB=30,INT=lv?lv.length-1:3;
   const n=pts.length;
   /* levels are a named ladder, so the axis is one gridline per rung */
-  const A=lv?{lo:0.5,hi:lv.length+0.5,ticks:lv.map((_,i)=>i+1)}:niceAxis(pts.map(p=>p.value),INT);
+  /* a paired series shares one scale, so the axis has to span both lines */
+  const A=lv?{lo:0.5,hi:lv.length+0.5,ticks:lv.map((_,i)=>i+1)}
+    :niceAxis(pair?pts.flatMap(p=>[p.value,p.low]):pts.map(p=>p.value),INT);
   const B=dual?niceAxis(pts.filter(p=>p.reps!=null).map(p=>p.reps),INT):null;
   const X=i=> n===1 ? (padL+(W-padL-padR)/2) : padL+(W-padL-padR)*(i/(n-1));
   const yOf=(v,ax)=> padT+(H-padT-padB)*(1-(v-ax.lo)/(ax.hi-ax.lo));
@@ -1709,6 +1764,16 @@ function buildChart(pts,unit,repLabel,levelNames){
       svg.appendChild(mk('circle',{cx:X(o.i),cy:Y2(o.v),r:3.5,fill:'var(--chart2)'}));
     });
   }
+  /* the lower half of a pair sits on the same axis, same colour, faded */
+  if(pair){
+    if(n>1) svg.appendChild(mk('path',{d:pts.map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.low)).join(' '),
+      fill:'none',stroke:'var(--chart)','stroke-width':2,opacity:.45,
+      'stroke-linejoin':'round','stroke-linecap':'round'}));
+    pts.forEach((p,i)=>{
+      svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.low),r:5,fill:'var(--surface)'}));
+      svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.low),r:4,fill:'var(--chart)',opacity:.45}));
+    });
+  }
   if(n>1) svg.appendChild(mk('path',{d:pts.map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.value)).join(' '),
     fill:'none',stroke:'var(--chart)','stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
   pts.forEach((p,i)=>{
@@ -1728,7 +1793,8 @@ function buildChart(pts,unit,repLabel,levelNames){
     for(let i=0;i<n;i++){ const d=Math.abs(X(i)-px); if(d<bd){bd=d;best=i;} }
     const p=pts[best];
     cross.setAttribute('x1',X(best)); cross.setAttribute('x2',X(best)); cross.setAttribute('opacity',1);
-    tip.textContent=fmtDate(p.date)+' · '+(lv?p.levelName:p.value+' '+unit)+
+    tip.textContent=fmtDate(p.date)+(pair&&p.time?' '+p.time:'')+' · '+
+      (lv?p.levelName:(pair?p.value+'/'+p.low+' '+unit:p.value+' '+unit))+
       (dual&&p.reps!=null?' · '+p.reps+' '+repLabel:'');
     tip.style.left=(X(best)/W*r.width)+'px';
     tip.style.top=(Y(p.value)/H*r.height)+'px';
@@ -2606,6 +2672,175 @@ async function viewCoach(M,arg){
 }
 let coachCleanup=null;
 
+/* ================= blood pressure =================
+   Kept off the timeline - it is not training - but it trends in Progress, goes
+   into the physio report and the coach can see it. */
+const BP_TAGS=[['','Neither'],['pre','Before workout'],['post','After workout']];
+const bpTagName=t=>(BP_TAGS.find(x=>x[0]===(t||''))||BP_TAGS[0])[1];
+const nowTime=()=>{ const d=new Date();
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+const bpLine=e=>e.sys+'/'+e.dia+(e.pulse?' · '+e.pulse+' bpm':'');
+
+/* Shrink before sending: a phone photo is several megabytes and a 7-segment
+   display needs none of that resolution. Smaller is faster and cheaper. */
+function shrink(file,max){
+  return new Promise((res,rej)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const sc=Math.min(1,max/Math.max(img.width,img.height));
+      const c=document.createElement('canvas');
+      c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(url);
+      res(c.toDataURL('image/jpeg',0.82).split(',')[1]);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('That image could not be opened.')); };
+    img.src=url;
+  });
+}
+const BP_READ_SYSTEM=`You read blood pressure monitor displays. The photo is of a home monitor's screen, usually a three-number LCD: systolic on top, diastolic below it, pulse at the bottom, sometimes labelled SYS, DIA and PULSE or with a heart symbol.
+
+Return only what you can actually see. Systolic is the larger of the two pressures and diastolic the smaller — if the photo is angled, blurred or cropped and you are not certain of a digit, leave that field null rather than guessing. A wrong reading recorded as fact is worse than no reading. Ignore any date or time shown on the device. If the image is not a blood pressure monitor at all, return all three as null.`;
+const BP_SCHEMA={
+  type:'object',
+  properties:{
+    systolic:{type:['integer','null'], description:'The upper number, typically 90-200.'},
+    diastolic:{type:['integer','null'], description:'The lower number, typically 50-130.'},
+    pulse:{type:['integer','null'], description:'Beats per minute, typically 40-120. Null if not shown.'},
+    note:{type:'string', description:'Empty if the reading was clear. Otherwise one short sentence saying what could not be read and why.'}
+  },
+  required:['systolic','diastolic','pulse','note'],
+  additionalProperties:false
+};
+async function bpRead(key,b64){
+  const res=await fetch(AI_URL,{
+    method:'POST',
+    headers:{'content-type':'application/json','x-api-key':key,
+      'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({
+      model:AI_MODEL, max_tokens:700,
+      output_config:{effort:'low', format:{type:'json_schema', schema:BP_SCHEMA}},
+      system:BP_READ_SYSTEM,
+      messages:[{role:'user',content:[
+        {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
+        {type:'text',text:'Read this monitor.'}
+      ]}]
+    })
+  });
+  if(!res.ok){
+    let d=''; try{ const j=await res.json(); d=(j.error&&j.error.message)||''; }catch(e){}
+    throw new AiError(res.status,d);
+  }
+  const j=await res.json();
+  const txt=(j.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  try{ return JSON.parse(txt); }catch(e){ throw new Error('The reading came back unreadable.'); }
+}
+
+function viewBP(M,editId){
+  setTab('home');
+  let entry, isEdit=false;
+  if(editId){
+    const src=S.entries.find(x=>x.id===editId&&x.type==='bp');
+    if(!src){ M.innerHTML='<p class="empty">Entry not found.</p>'; setBar('Edit','home'); return; }
+    entry=JSON.parse(JSON.stringify(src)); isEdit=true;
+  } else {
+    entry={id:uid(), type:'bp', date:todayStr(), time:nowTime(), createdAt:Date.now(),
+      sys:null, dia:null, pulse:null, tag:'', comments:''};
+  }
+  M.innerHTML=`
+    <div class="shot">
+      <button class="btn secondary" id="bShot">${ico('camera',17)} Read it from a photo</button>
+      <input type="file" id="fShot" accept="image/*" capture="environment" class="hidden">
+    </div>
+    <p class="cue" id="shotMsg" style="margin:-6px 2px 14px">Photograph the monitor and the numbers fill
+      themselves in — check them before saving. Or just type them.</p>
+    <div class="field"><label>Reading</label><div class="bprow" id="bpCtls"></div></div>
+    <div class="field"><label>When in the day</label>
+      <div class="levelseg tight" id="bpTag">${BP_TAGS.map(([v,n])=>
+        `<button type="button" class="lvbtn${(entry.tag||'')===v?' on':''}" data-v="${v}">${esc(n)}</button>`).join('')}</div></div>
+    <div class="btnrow">
+      <div class="field" style="flex:1"><label>Date</label><input type="date" id="fDate" value="${entry.date}"></div>
+      <div class="field" style="flex:1"><label>Time</label><input type="time" id="fTime" value="${entry.time||nowTime()}"></div>
+    </div>
+    <div class="field"><label>Note (optional)</label>
+      <textarea id="fCom" placeholder="e.g. sat down five minutes first">${esc(entry.comments||'')}</textarea></div>
+    <button class="btn" id="bSave">${isEdit?'Save Changes':'Save'}</button>`;
+
+  const ctls={};
+  [['sys','Systolic'],['dia','Diastolic'],['pulse','Pulse']].forEach(([k,label])=>{
+    const c=stepCtl(label,entry[k],1,v=>{ entry[k]=v;
+      c.querySelector('.stepper').classList.toggle('blankhl',v==null); },{blankable:true});
+    if(entry[k]==null) c.querySelector('.stepper').classList.add('blankhl');
+    ctls[k]=c; $('#bpCtls').appendChild(c);
+  });
+  const setVal=(k,v)=>{ if(v==null) return; entry[k]=v;
+    ctls[k].querySelector('input').value=v;
+    ctls[k].querySelector('.stepper').classList.remove('blankhl'); };
+
+  M.querySelectorAll('#bpTag .lvbtn').forEach(b=>{
+    b.onclick=()=>{ entry.tag=b.dataset.v;
+      M.querySelectorAll('#bpTag .lvbtn').forEach(x=>x.classList.toggle('on',x===b)); };
+  });
+
+  $('#bShot').onclick=()=>$('#fShot').click();
+  $('#fShot').onchange=async(ev)=>{
+    const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
+    const msg=$('#shotMsg'), btn=$('#bShot');
+    const key=await aiKey();
+    if(!key){ msg.textContent='Reading a photo needs your API key — add it under Coach, Settings.'; return; }
+    btn.disabled=true; msg.innerHTML='<span class="dots"><i></i><i></i><i></i></span> Reading the monitor…';
+    try{
+      const b64=await shrink(f,1400);
+      const r=await bpRead(key,b64);
+      setVal('sys',r.systolic); setVal('dia',r.diastolic); setVal('pulse',r.pulse);
+      const got=[r.systolic,r.diastolic,r.pulse].filter(v=>v!=null).length;
+      msg.textContent=!got ? (r.note||'Could not read that photo — type the numbers in instead.')
+        : (r.note ? r.note+' Check the numbers before saving.'
+                  : 'Read from the photo — check the numbers before saving.');
+    }catch(e){
+      msg.textContent=e instanceof AiError?e.friendly()
+        :(navigator.onLine?'Could not read the photo: '+e.message
+                          :'No connection — type the numbers in instead.');
+    }
+    btn.disabled=false;
+  };
+
+  const doSave=async()=>{
+    if(entry.sys==null||entry.dia==null){ alert('Enter both blood pressure numbers.'); return; }
+    if(entry.sys<=entry.dia){ alert('The top number should be the larger of the two.'); return; }
+    entry.date=$('#fDate').value||todayStr();
+    entry.time=$('#fTime').value||nowTime();
+    entry.comments=$('#fCom').value.trim();
+    await saveEntry(entry);
+    toast('Blood pressure saved');
+    nav(isEdit?('entry/'+entry.id):'bplog');
+  };
+  formBar(isEdit?'Edit reading':'Blood pressure', isEdit?('entry/'+entry.id):'capture', doSave);
+  $('#bSave').onclick=doSave;
+}
+
+/* the readings themselves, since they are not on the timeline */
+function viewBPLog(M,date){
+  setTab('home');
+  setBar(date?'Blood pressure · '+fmtDate(date):'Blood pressure','home');
+  const list=S.entries.filter(e=>e.type==='bp'&&(!date||e.date===date))
+    .sort((a,b)=>b.date.localeCompare(a.date)||(b.time||'').localeCompare(a.time||''));
+  if(!list.length){ M.innerHTML='<p class="empty">No readings yet.</p>'; return; }
+  M.innerHTML='';
+  for(const e of list){
+    const c=document.createElement('div'); c.className='card tappable';
+    c.innerHTML=`<div class="cardhead"><span class="badge bp">${ico('heart',15)}</span>`+
+      `<span class="date">${esc(fmtDate(e.date))}${e.time?' · '+esc(e.time):''}</span>`+
+      `<span class="spacer"></span><span class="chev">${ico('chevR',16)}</span></div>`+
+      `<div class="cardsub">${esc(bpLine(e))}${e.tag?' · '+esc(bpTagName(e.tag).toLowerCase()):''}</div>`;
+    c.onclick=()=>nav('entry/'+e.id);
+    M.appendChild(c);
+  }
+  const b=document.createElement('button'); b.className='btn secondary'; b.style.marginTop='12px';
+  b.textContent='Add a reading'; b.onclick=()=>nav('bp');
+  M.appendChild(b);
+}
+
 /* ================= physio report ================= */
 const RCSS=`
 *{box-sizing:border-box}
@@ -2697,7 +2932,7 @@ function svgChart(pts,unit){
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="progress chart" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
 }
 function reportModel(){
-  const all=[...S.entries].filter(e=>e.type!=='meditation')
+  const all=[...S.entries].filter(e=>e.type!=='meditation'&&e.type!=='bp')
     .sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
   const workouts=all.filter(e=>e.type==='workout');
   const others=all.filter(e=>e.type!=='workout');
@@ -2860,7 +3095,15 @@ function reportText(m){
   L.push('');L.push('3. LOAD PROGRESSION');
   L.push(tab(['Exercise','First load','First sets x reps','Latest load','Latest sets x reps','Sessions']));
   for(const r of m.prog) L.push(tab([r.name,r.first.load,r.first.vol,r.latest.load,r.latest.vol,r.count]));
-  L.push('');L.push('4. FULL DATA');
+  const bps=[...S.entries].filter(e=>e.type==='bp')
+    .sort((a,b)=>a.date.localeCompare(b.date)||(a.time||'').localeCompare(b.time||''));
+  if(bps.length){
+    L.push('');L.push('4. BLOOD PRESSURE');
+    L.push(tab(['Date','Time','Systolic','Diastolic','Pulse','When','Note']));
+    for(const e of bps) L.push(tab([e.date,e.time||'',e.sys,e.dia,e.pulse==null?'':e.pulse,
+      bpTagName(e.tag),(e.comments||'').replace(/\n/g,' · ')]));
+  }
+  L.push('');L.push((bps.length?'5':'4')+'. FULL DATA');
   L.push(tab(['Date','Session','Exercise','Load','Sets','Reps']));
   for(const r of m.rows) L.push(tab(r));
   L.push('');
