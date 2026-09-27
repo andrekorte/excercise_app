@@ -393,7 +393,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v42';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v43';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -2698,9 +2698,13 @@ function shrink(file,max){
     img.src=url;
   });
 }
-const BP_READ_SYSTEM=`You read blood pressure monitor displays. The photo is of a home monitor's screen, usually a three-number LCD: systolic on top, diastolic below it, pulse at the bottom, sometimes labelled SYS, DIA and PULSE or with a heart symbol.
+const BP_READ_SYSTEM=`You read blood pressure monitor displays.
 
-Return only what you can actually see. Systolic is the larger of the two pressures and diastolic the smaller — if the photo is angled, blurred or cropped and you are not certain of a digit, leave that field null rather than guessing. A wrong reading recorded as fact is worse than no reading. Ignore any date or time shown on the device. If the image is not a blood pressure monitor at all, return all three as null.`;
+The photo is of a home monitor's screen: three numbers stacked vertically, systolic at the top, diastolic below it, pulse at the bottom, usually labelled SYS, DIA and PUL or PULSE, often with mmHg under the first two and /min under the last. Read the numbers currently on the display.
+
+Ignore everything that is not one of those three numbers: the coloured classification bar beside the readings, user or heart symbols, MEM and SET button labels, a record number, any date or time on the device, and anything reflected in the glass. Screens are glossy, so a photograph of one usually has a hand or a window reflected across it.
+
+Return only what you can actually see. Systolic is the larger of the two pressures and diastolic the smaller. If the photo is angled, blurred or cropped, or a reflection sits over a digit and you are not certain of it, leave that field null rather than guessing — a wrong reading recorded as fact is worse than no reading at all. If the image is not a blood pressure monitor, return all three as null.`;
 const BP_SCHEMA={
   type:'object',
   properties:{
