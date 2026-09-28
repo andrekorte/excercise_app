@@ -393,7 +393,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v43';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v44';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -773,9 +773,11 @@ function viewHome(M){
       <button class="btn secondary" id="bInj"><span class="chip injury">${ico('alert',15)}</span> Injury Break</button>
     </div>
     <button class="btn secondary" id="bMed"><span class="chip med">${ico('lotus',15)}</span> Meditation</button>
+    <button class="btn secondary" id="bBP"><span class="chip bp">${ico('heart',15)}</span> Blood pressure</button>
     <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
     <div id="feed"></div>`;
   $('#bCap').onclick=()=>nav('capture');
+  $('#bBP').onclick=()=>nav('bp');
   if(justSaved){
     const js=justSaved; justSaved=null;
     quickReady().then(ok=>{
@@ -874,8 +876,7 @@ function viewPick(M){
   M.insertAdjacentHTML('beforeend','<div class="pickdiv"><span>Other activity</span></div>');
   [['swim','waves','Swimming','laps and stroke'],
    ['run','run','Run','distance lives in Runkeeper'],
-   ['bike','bike','Bike ride','distance in km'],
-   ['bp','heart','Blood pressure','photograph the monitor or type it in']].forEach(([route,icon,name,sub])=>{
+   ['bike','bike','Bike ride','distance in km']].forEach(([route,icon,name,sub])=>{
     const b=document.createElement('button'); b.className='pickbtn activity';
     b.innerHTML=`<span class="chip ${route}">${ico(icon,17)}</span>
       <span class="pickmain"><span class="pickname">${esc(name)}</span><br>
@@ -2679,7 +2680,7 @@ const BP_TAGS=[['','Neither'],['pre','Before workout'],['post','After workout']]
 const bpTagName=t=>(BP_TAGS.find(x=>x[0]===(t||''))||BP_TAGS[0])[1];
 const nowTime=()=>{ const d=new Date();
   return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
-const bpLine=e=>e.sys+'/'+e.dia+(e.pulse?' · '+e.pulse+' bpm':'');
+const bpLine=e=>'SYS '+e.sys+' · DIA '+e.dia+(e.pulse?' · PUL '+e.pulse:'');
 
 /* Shrink before sending: a phone photo is several megabytes and a 7-segment
    display needs none of that resolution. Smaller is faster and cheaper. */
@@ -2768,8 +2769,11 @@ function viewBP(M,editId){
     </div>
     <div class="field"><label>Note (optional)</label>
       <textarea id="fCom" placeholder="e.g. sat down five minutes first">${esc(entry.comments||'')}</textarea></div>
-    <button class="btn" id="bSave">${isEdit?'Save Changes':'Save'}</button>`;
+    <button class="btn" id="bSave">${isEdit?'Save Changes':'Save'}</button>
+    ${isEdit?'':`<button class="btn secondary" id="bPast" style="margin-top:10px">Past readings${
+      S.entries.filter(e=>e.type==='bp').length?' · '+S.entries.filter(e=>e.type==='bp').length:''}</button>`}`;
 
+  if($('#bPast')) $('#bPast').onclick=()=>nav('bplog');
   const ctls={};
   [['sys','Systolic'],['dia','Diastolic'],['pulse','Pulse']].forEach(([k,label])=>{
     const c=stepCtl(label,entry[k],1,v=>{ entry[k]=v;
@@ -2819,7 +2823,7 @@ function viewBP(M,editId){
     toast('Blood pressure saved');
     nav(isEdit?('entry/'+entry.id):'bplog');
   };
-  formBar(isEdit?'Edit reading':'Blood pressure', isEdit?('entry/'+entry.id):'capture', doSave);
+  formBar(isEdit?'Edit reading':'Blood pressure', isEdit?('entry/'+entry.id):'home', doSave);
   $('#bSave').onclick=doSave;
 }
 
@@ -2840,9 +2844,13 @@ function viewBPLog(M,date){
     c.onclick=()=>nav('entry/'+e.id);
     M.appendChild(c);
   }
-  const b=document.createElement('button'); b.className='btn secondary'; b.style.marginTop='12px';
-  b.textContent='Add a reading'; b.onclick=()=>nav('bp');
-  M.appendChild(b);
+  const add=document.createElement('button'); add.className='btn secondary'; add.style.marginTop='12px';
+  add.textContent='Add a reading'; add.onclick=()=>nav('bp');
+  M.appendChild(add);
+  const tr=document.createElement('button'); tr.className='btn secondary'; tr.style.marginTop='10px';
+  tr.id='bTrend'; tr.textContent='See the trend';
+  tr.onclick=()=>nav('progress/'+encodeURIComponent('Blood pressure'));
+  M.appendChild(tr);
 }
 
 /* ================= physio report ================= */
