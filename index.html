@@ -393,7 +393,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v45';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v46';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -3237,13 +3237,15 @@ function viewReport(M){
       box-shadow:inset 0 0 0 1px var(--ring);background:#fff"></iframe>
     <button class="btn" id="bMail" style="margin-top:14px">Email report</button>
     <div class="btnrow">
-      <button class="btn secondary" id="bPrint">Save as PDF</button>
+      <button class="btn secondary" id="bPdf">Email as PDF</button>
       <button class="btn secondary" id="bAddr">Change address</button>
     </div>
     <p class="cue" id="addrLine" style="margin:2px 2px 2px">No address saved yet</p>
     <p class="cue" style="margin:8px 2px 24px"><b>Email report</b> copies the report as formatted tables
       and opens Mail — long-press in the message and Paste. The tables keep their layout in Mail and still
-      paste into Excel as columns. <b>Save as PDF</b> opens the print sheet for the full version with charts.</p>`;
+      paste into Excel as columns. <b>Email as PDF</b> makes the full document, charts and all, and hands it
+      to the share sheet — choose Mail and it arrives as an attachment ready to address.</p>
+    <p class="cue" id="pdfMsg" style="margin:-14px 2px 24px"></p>`;
   $('#rprev').srcdoc=html;
   const subject='Shoulder rehab progress report — '+fmtFull(m.from)+' to '+fmtFull(m.to);
   const promptAddr=()=>{
@@ -3262,16 +3264,268 @@ function viewReport(M){
     setTimeout(()=>{ openMail(head+'&body='+
       encodeURIComponent('Hi,\n\nMy shoulder rehab progress report is below.\n\n')); },900);
   };
-  $('#bPrint').onclick=()=>{
-    const f=$('#rprev');
-    try{ f.contentWindow.focus(); f.contentWindow.print(); }
-    catch(e){
-      const w=window.open('','_blank');
-      if(w){ w.document.write(html); w.document.close(); setTimeout(()=>w.print(),400); }
-      else alert('Could not open the print view.');
+  /* Not a single await before navigator.share: iOS only opens the share sheet
+     from inside the tap that asked for it, and awaiting anything first spends
+     that permission. Building the PDF is pure string work, so it fits. */
+  $('#bPdf').onclick=()=>{
+    const msg=$('#pdfMsg');
+    let file;
+    try{
+      file=new File([reportPDF(m)],'shoulder-report-'+todayStr()+'.pdf',{type:'application/pdf'});
+    }catch(err){ msg.textContent='Could not build the PDF: '+err.message; return; }
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      msg.textContent='';
+      navigator.share({files:[file],title:'Shoulder rehab progress report'})
+        .catch(e=>{ if(e&&e.name!=='AbortError') msg.textContent='The share sheet would not open: '+e.message; });
+      return;
     }
+    /* desktop, or an iOS that will not take the file: fall back to saving it */
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(file); a.download=file.name;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000);
+    msg.textContent='Saved to your downloads — attach it to an email from there.';
   };
   $('#bAddr').onclick=()=>{ if(promptAddr()) toast('Saved '+addr); };
+}
+
+/* ================= PDF =================
+   Written by hand rather than with a library, for two reasons. The app is one
+   file with no build step and works offline, and - the deciding one - building
+   the document has to be synchronous: iOS only opens the share sheet from
+   inside the tap that asked for it, and a single await anywhere in the chain
+   loses that permission. Everything below is string assembly. */
+const PT={W:595.28, H:841.89, M:42};          /* A4, in points */
+const PDF_WIN={'·':0xB7,'×':0xD7,'—':0x97,'–':0x96,'’':0x92,'‘':0x91,'“':0x93,'”':0x94,
+  '…':0x85,'é':0xE9,'É':0xC9,'ü':0xFC,'ö':0xF6,'ä':0xE4,'ß':0xDF,'°':0xB0,'€':0x80,'£':0xA3};
+/* the standard 14 fonts are WinAnsi; anything outside it has to be mapped or dropped */
+function pdfStr(t){
+  let o='';
+  for(const ch of String(t==null?'':t)){
+    const c=ch.codePointAt(0);
+    if(c===0x28||c===0x29||c===0x5C) o+='\\'+ch;
+    else if(c<0x80) o+=ch;
+    else if(PDF_WIN[ch]) o+='\\'+PDF_WIN[ch].toString(8).padStart(3,'0');
+    else if(c<0x100) o+='\\'+c.toString(8).padStart(3,'0');
+    else o+='?';
+  }
+  return o;
+}
+/* Helvetica widths, measured by the browser. Arial and Helvetica share metrics,
+   so this lines up with what the PDF viewer will do. */
+let pdfMeasure=null;
+function textW(t,size,bold){
+  if(!pdfMeasure) pdfMeasure=document.createElement('canvas').getContext('2d');
+  pdfMeasure.font=(bold?'bold ':'')+'100px Helvetica, Arial, sans-serif';
+  return pdfMeasure.measureText(String(t==null?'':t)).width/100*size;
+}
+function ellip(t,size,bold,max){
+  t=String(t==null?'':t);
+  if(textW(t,size,bold)<=max) return t;
+  while(t.length>1&&textW(t+'…',size,bold)>max) t=t.slice(0,-1);
+  return t+'…';
+}
+
+function pdfDoc(){
+  const pages=[]; let ops=[], y=0;
+  const d={
+    get y(){ return y; }, set y(v){ y=v; },
+    page(){ if(ops.length) pages.push(ops.join('\n')); ops=[]; y=PT.H-PT.M; return d; },
+    room(need){ if(y-need<PT.M) d.page(); return d; },
+    /* text at an absolute x, or right-aligned when rx is given */
+    text(t,x,size,opt){
+      const o=opt||{}, s=pdfStr(t);
+      const xx=o.rx!=null?o.rx-textW(t,size,o.bold):x;
+      if(o.grey) ops.push((o.grey+' '+o.grey+' '+o.grey)+' rg');
+      else if(o.rgb) ops.push(o.rgb+' rg');
+      else ops.push('0 0 0 rg');
+      ops.push('BT /'+(o.bold?'F2':'F1')+' '+size+' Tf '+xx.toFixed(2)+' '+y.toFixed(2)+' Td ('+s+') Tj ET');
+      return d;
+    },
+    line(x1,y1,x2,y2,w,grey){
+      ops.push((grey==null?'0.75':grey)+' G '+(w||0.5)+' w '+
+        x1.toFixed(2)+' '+y1.toFixed(2)+' m '+x2.toFixed(2)+' '+y2.toFixed(2)+' l S');
+      return d;
+    },
+    rect(x,yy,w,h,rgb){ ops.push(rgb+' rg '+x.toFixed(2)+' '+yy.toFixed(2)+' '+
+      w.toFixed(2)+' '+h.toFixed(2)+' re f'); return d; },
+    poly(pts,rgb,w,dash){
+      if(pts.length<2) return d;
+      ops.push(rgb+' RG '+(w||1.2)+' w '+(dash?'[3 2] 0 d':'[] 0 d'));
+      ops.push(pts.map((p,i)=>p[0].toFixed(2)+' '+p[1].toFixed(2)+(i?' l':' m')).join(' ')+' S');
+      ops.push('[] 0 d');
+      return d;
+    },
+    dot(x,yy,r,rgb){
+      const k=0.5523*r;
+      ops.push(rgb+' rg '+(x+r).toFixed(2)+' '+yy.toFixed(2)+' m '+
+        [[x+r,yy+k,x+k,yy+r,x,yy+r],[x-k,yy+r,x-r,yy+k,x-r,yy],
+         [x-r,yy-k,x-k,yy-r,x,yy-r],[x+k,yy-r,x+r,yy-k,x+r,yy]]
+        .map(c=>c.map(v=>v.toFixed(2)).join(' ')+' c').join(' ')+' f');
+      return d;
+    },
+    done(){ if(ops.length) pages.push(ops.join('\n')); return pages; }
+  };
+  return d;
+}
+
+/* assemble the objects, count the bytes, write the cross-reference table */
+function pdfBytes(pages){
+  const objs=[];
+  const add=t=>{ objs.push(t); return objs.length; };      /* 1-based object ids */
+  const kids=[], contentIds=[];
+  for(const c of pages) contentIds.push(add('<< /Length '+c.length+' >>\nstream\n'+c+'\nendstream'));
+  const fontR=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  const fontB=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  const pagesId=objs.length+pages.length+1;
+  for(let i=0;i<pages.length;i++) kids.push(add(
+    '<< /Type /Page /Parent '+pagesId+' 0 R /MediaBox [0 0 '+PT.W.toFixed(2)+' '+PT.H.toFixed(2)+']'+
+    ' /Resources << /Font << /F1 '+fontR+' 0 R /F2 '+fontB+' 0 R >> >>'+
+    ' /Contents '+contentIds[i]+' 0 R >>'));
+  add('<< /Type /Pages /Count '+kids.length+' /Kids ['+kids.map(k=>k+' 0 R').join(' ')+'] >>');
+  const catalog=add('<< /Type /Catalog /Pages '+pagesId+' 0 R >>');
+
+  let out='%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
+  const offsets=[];
+  objs.forEach((o,i)=>{ offsets.push(out.length); out+=(i+1)+' 0 obj\n'+o+'\nendobj\n'; });
+  const xref=out.length;
+  out+='xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';
+  for(const off of offsets) out+=String(off).padStart(10,'0')+' 00000 n \n';
+  out+='trailer\n<< /Size '+(objs.length+1)+' /Root '+catalog+' 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+  const bytes=new Uint8Array(out.length);
+  for(let i=0;i<out.length;i++) bytes[i]=out.charCodeAt(i)&0xFF;
+  return bytes;
+}
+
+/* ---- the report itself ---- */
+const PDF_INK='0.07 0.09 0.10', PDF_MUTE='0.42 0.45 0.47',
+      PDF_BLUE='0.16 0.47 0.84', PDF_ORANGE='0.92 0.41 0.20';
+
+const PDF_GUT=8;          /* breathing room between columns */
+function pdfTable(d,cols,rows,opt){
+  const o=opt||{}, size=o.size||8.5, lead=size+4.2;
+  const x0=PT.M, x1=PT.W-PT.M;
+  const head=()=>{
+    d.room(lead*3);
+    d.rect(x0,d.y-3,x1-x0,lead,'0.94 0.95 0.96');
+    cols.forEach(c=>d.text(c.h,x0+c.x,size,{bold:true,rgb:PDF_INK,rx:c.right?x0+c.x+c.w-PDF_GUT:null}));
+    d.y-=lead;
+  };
+  head();
+  rows.forEach((r,i)=>{
+    if(d.y-lead<PT.M){ d.page(); head(); }
+    if(i%2) d.rect(x0,d.y-3,x1-x0,lead,'0.975 0.977 0.980');
+    cols.forEach((c,ci)=>{
+      const v=r[ci]==null?'':String(r[ci]);
+      d.text(ellip(v,size,false,c.w-PDF_GUT),x0+c.x,size,
+        {rgb:PDF_INK,rx:c.right?x0+c.x+c.w-PDF_GUT:null});
+    });
+    d.y-=lead;
+    d.line(x0,d.y+lead-3.5,x1,d.y+lead-3.5,0.4,'0.88');
+  });
+  d.y-=6;
+}
+/* columns from relative weights, so the table always fills the page width */
+function pdfCols(headers,weights,rights){
+  const avail=PT.W-2*PT.M, total=weights.reduce((a,b)=>a+b,0);
+  let x=0;
+  return headers.map((h,i)=>{
+    const w=avail*weights[i]/total, c={h,x,w,right:!!(rights&&rights[i])};
+    x+=w; return c;
+  });
+}
+function pdfHeading(d,n,t){
+  d.room(40); d.y-=6;
+  d.text(n+'. '+t.toUpperCase(),PT.M,10,{bold:true,rgb:PDF_BLUE});
+  d.y-=4; d.line(PT.M,d.y,PT.W-PT.M,d.y,0.8,'0.78'); d.y-=13;
+}
+
+function pdfChart(d,name,pts){
+  const w=PT.W-2*PT.M, h=132;
+  d.room(h+58);
+  d.text(name,PT.M,9.5,{bold:true,rgb:PDF_INK}); d.y-=12;
+  const top=d.y, bot=d.y-h, padL=PT.M+32, padR=PT.W-PT.M-(pts.some(p=>p.reps!=null)?30:6);
+  const unit=pts.unit||(pts[0].kind==='bandKg'?'kg band':'kg');
+  const dual=pts.some(p=>p.reps!=null)&&!pts.unit;
+  const A=pts.pair?niceAxis(pts.flatMap(p=>[p.value,p.low]),3):niceAxis(pts.map(p=>p.value),3);
+  const B=dual?niceAxis(pts.filter(p=>p.reps!=null).map(p=>p.reps),3):null;
+  const X=i=>pts.length===1?(padL+padR)/2:padL+(padR-padL)*(i/(pts.length-1));
+  const Y=(v,ax)=>bot+(top-bot)*((v-ax.lo)/(ax.hi-ax.lo));
+  A.ticks.forEach((tv,i)=>{
+    const yy=Y(tv,A);
+    d.line(padL,yy,padR,yy,0.4,'0.88');
+    d.y=yy-2.5; d.text(String(tv),0,7,{rx:padL-4,rgb:PDF_MUTE});
+    if(B) d.text(String(B.ticks[i]),padR+4,7,{rgb:PDF_ORANGE});
+  });
+  if(B) d.poly(pts.map((p,i)=>p.reps==null?null:[X(i),Y(p.reps,B)]).filter(Boolean),PDF_ORANGE,1,true);
+  if(pts.pair) d.poly(pts.map((p,i)=>[X(i),Y(p.low,A)]),'0.60 0.75 0.92',1.2);
+  d.poly(pts.map((p,i)=>[X(i),Y(p.value,A)]),PDF_BLUE,1.4);
+  if(pts.length<=45) pts.forEach((p,i)=>d.dot(X(i),Y(p.value,A),1.7,PDF_BLUE));
+  /* clear of the lowest axis label, which sits just left of the plot */
+  d.y=bot-15;
+  d.text(fmtDate(pts[0].date),PT.M,7,{rgb:PDF_MUTE});
+  d.text(fmtDate(pts[pts.length-1].date),0,7,{rx:PT.W-PT.M,rgb:PDF_MUTE});
+  d.y-=10;
+  d.text(unit+(B?'   ·   '+(pts[0].mode==='secs'?'seconds':'reps')+' (dashed, right)':''),
+    PT.M,7,{rgb:PDF_MUTE});
+  d.y-=18;
+}
+
+function reportPDF(m){
+  const d=pdfDoc(); d.page();
+  d.text('Shoulder rehabilitation',PT.M,20,{bold:true,rgb:PDF_INK}); d.y-=22;
+  d.text('progress report',PT.M,20,{bold:true,rgb:PDF_INK}); d.y-=20;
+  d.text(fmtFull(m.from)+' — '+fmtFull(m.to),PT.M,9.5,{rgb:PDF_MUTE}); d.y-=12;
+  d.text(m.workouts.length+' sessions · '+m.perWeek.toFixed(1)+' per week · '+m.raised+
+    ' loads increased · '+m.painDays+' day(s) off with pain',PT.M,9.5,{rgb:PDF_MUTE});
+  d.y-=20;
+
+  pdfHeading(d,1,'Current programme');
+  for(const k of ['A','B','C']){
+    const t=S.templates[k]; if(!t) continue;
+    d.room(60);
+    d.text(t.name,PT.M,9.5,{bold:true,rgb:PDF_INK}); d.y-=13;
+    pdfTable(d,pdfCols(['Exercise','Load','Sets','Reps'],[5,3,1,1.4],[0,0,1,1]),
+      t.exercises.map(x=>[x.name,fmtLoad(x.load,tmplLevel(x)),x.sets,
+        x.reps+(x.mode==='secs'?' s':'')]));
+  }
+
+  pdfHeading(d,2,'Session log');
+  pdfTable(d,pdfCols(['Date','Type','What','Notes'],[2,1.5,3.4,3.6]),
+    m.all.map(e=>[fmtDate(e.date),entryLabel(e),entryContent(e),
+      (e.note||e.comments||'').replace(/\n/g,' · ')]));
+
+  pdfHeading(d,3,'Load progression');
+  pdfTable(d,pdfCols(['Exercise','First','','Latest','','Sessions'],[3.4,1.5,1.4,1.5,1.4,1],[0,0,0,0,0,1]),
+    m.prog.map(r=>[r.name,r.first.load,r.first.vol,r.latest.load,r.latest.vol,r.count]));
+
+  const bps=[...S.entries].filter(e=>e.type==='bp')
+    .sort((a,b)=>a.date.localeCompare(b.date)||(a.time||'').localeCompare(b.time||''));
+  let n=4;
+  if(bps.length){
+    pdfHeading(d,n++,'Blood pressure');
+    pdfTable(d,pdfCols(['Date','Time','Systolic','Diastolic','Pulse','When'],
+      [2,1.2,1.3,1.3,1,2.2],[0,0,1,1,1,0]),
+      bps.map(e=>[fmtDate(e.date),e.time||'',e.sys,e.dia,e.pulse==null?'—':e.pulse,bpTagName(e.tag)]));
+  }
+
+  const charts=[...m.series.entries()].filter(([nm,pts])=>pts.length>1&&pts.unit!=='points');
+  if(charts.length){
+    pdfHeading(d,n++,'Progress charts');
+    for(const [nm,pts] of charts) pdfChart(d,nm,pts);
+  }
+
+  pdfHeading(d,n++,'Full data');
+  pdfTable(d,pdfCols(['Date','Session','Exercise','Load','Sets','Reps'],
+    [2,1.2,3.4,2,1,1.2],[0,0,0,0,1,1]), m.rows.map(r=>[fmtDate(r[0]),r[1],r[2],r[3],r[4],r[5]]),{size:8});
+
+  d.room(40);
+  d.y-=4;
+  d.text('Every figure is the load and repetition count entered in the app at the time of the',
+    PT.M,7.5,{rgb:PDF_MUTE}); d.y-=10;
+  d.text('session, not recalled afterwards. Weight and reps use separate scales on the charts.',
+    PT.M,7.5,{rgb:PDF_MUTE});
+  return pdfBytes(d.done());
 }
 
 /* ============ export / import ============ */
