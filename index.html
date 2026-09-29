@@ -393,7 +393,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v44';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v45';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -1566,8 +1566,14 @@ function progressSeries(){
   if(meds.length){
     const byDay=new Map();
     meds.forEach(e=>byDay.set(e.date,(byDay.get(e.date)||0)+(e.points||medPoints(e))));
+    /* every day from the first sitting to today, so the days he missed read as
+       zero rather than being quietly skipped over */
     const a=[]; a.unit='points';
-    [...byDay.keys()].sort().forEach(d=>a.push({date:d, value:byDay.get(d)}));
+    const first=[...byDay.keys()].sort()[0];
+    for(let d=new Date(first+'T00:00'), end=new Date(todayStr()+'T00:00'); d<=end; d.setDate(d.getDate()+1)){
+      const iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      a.push({date:iso, value:byDay.get(iso)||0, none:!byDay.has(iso)});
+    }
     map.set('Meditation (points)',a);
   }
   const rides=[...S.entries].filter(e=>e.type==='bike'&&e.km!=null)
@@ -1647,6 +1653,7 @@ function chartBox(name,pts){
   const box=document.createElement('div'); box.className='viz-root'; box.style.position='relative'; box.style.marginBottom='10px';
   const isLevel=pts.unit==='level';
   const isPair=!!pts.pair;                       /* two lines sharing one scale */
+  const isMedSeries=pts.unit==='points';
   const unit=pts.unit?pts.unit:(pts[0].kind==='bandKg'?'kg band':'kg');
   const noun=pts.unit==='laps'?'swim':(pts.unit==='km'?'ride'
     :(pts.unit==='points'?'day':(pts.unit==='mmHg'?'reading':'workout')));
@@ -1655,19 +1662,24 @@ function chartBox(name,pts){
   const repLabel=isPair?(pts.second||''):(pts[0].mode==='secs'?'sec':'reps');
   const latest=pts[pts.length-1], first=pts[0];
   const delta=Math.round((latest.value-first.value)*100)/100;
-  const head=isPair
+  const sat=isMedSeries?pts.filter(p=>!p.none).length:0;
+  const head=isMedSeries
+    ? `${sat} of ${pts.length} day${pts.length===1?'':'s'} · latest ${latest.value} points`
+    : isPair
     ? `latest ${latest.value}/${latest.low} ${unit}${latest.reps!=null?' · '+latest.reps+' '+repLabel:''}`
     : isLevel
     ? `latest ${esc(latest.levelName)}${latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${
         delta>0?' · ▲ moved up from '+esc(first.levelName):''}`
     : `latest ${latest.value} ${unit}${dual&&latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${
         delta?` · ${delta>0?'▲':'▼'} ${Math.abs(delta)} since first`:''}`;
-  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${pts.length} ${noun}${pts.length>1?'s':''} · ${head}</div>`;
+  box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${
+    isMedSeries?head:pts.length+' '+noun+(pts.length>1?'s':'')+' · '+head}</div>`;
   if(dual) box.insertAdjacentHTML('beforeend',
     `<div class="vlegend"><span><i style="background:var(--chart)"></i>${esc(isPair?'systolic':(isLevel?'Level':unit))}</span>`+
     (isPair?`<span><i style="background:var(--chart);opacity:.45"></i>${esc(pts.pair)}</span>`:'')+
     `<span><i style="background:var(--chart2)"></i>${esc(repLabel)}</span></div>`);
-  box.appendChild(buildChart(pts,unit,dual?repLabel:null,isLevel?pts.levels:null,isPair));
+  box.appendChild(buildChart(pts,unit,dual?repLabel:null,isLevel?pts.levels:null,isPair,
+    isMedSeries?{lo:0,hi:3,ticks:[0,1,2,3]}:null));
   const dt=document.createElement('details'); dt.className='datatable';
   const cell=(p,f,v)=>`<td><button class="cellv" data-d="${p.date}" data-f="${f}">${v}</button></td>`;
   /* a level is a name picked during the workout, not a number to overtype */
@@ -1681,7 +1693,7 @@ function chartBox(name,pts){
     : '<summary>Show data</summary><table><tr><th>Date</th><th>'+esc(isLevel?'Level':unit)+'</th>'+
       (dual?'<th>'+esc(repLabel)+'</th>':'')+'</tr>'+
       pts.map(p=>`<tr><td>${esc(fmtDate(p.date))}</td>${
-        isLevel?flat(p.levelName):cell(p,'value',p.value)}${
+        isLevel?flat(p.levelName):(p.none?flat(0):cell(p,'value',p.value))}${
         dual?(isLevel?flat(p.reps==null?'—':p.reps):cell(p,'reps',p.reps==null?'—':p.reps)):''}</tr>`)
         .reverse().join('')+'</table>';
   dt.open=OPEN_TABLES.has(name);
@@ -1722,7 +1734,7 @@ function niceAxis(vals,intervals){
   return {lo:mn,hi:mx,step:(mx-mn)/intervals,
     ticks:Array.from({length:intervals+1},(_,i)=>Math.round((mn+i*(mx-mn)/intervals)*100)/100)};
 }
-function buildChart(pts,unit,repLabel,levelNames,pair){
+function buildChart(pts,unit,repLabel,levelNames,pair,fixedAxis){
   const dual=!!repLabel&&pts.some(p=>p.reps!=null);
   const lv=levelNames&&levelNames.length>1?levelNames:null;
   const W=520,H=262,padL=lv?96:40,padR=dual?40:14,padT=16,padB=30,INT=lv?lv.length-1:3;
@@ -1730,8 +1742,9 @@ function buildChart(pts,unit,repLabel,levelNames,pair){
   /* levels are a named ladder, so the axis is one gridline per rung */
   /* a paired series shares one scale, so the axis has to span both lines */
   const A=lv?{lo:0.5,hi:lv.length+0.5,ticks:lv.map((_,i)=>i+1)}
-    :niceAxis(pair?pts.flatMap(p=>[p.value,p.low]):pts.map(p=>p.value),INT);
+    :(fixedAxis||niceAxis(pair?pts.flatMap(p=>[p.value,p.low]):pts.map(p=>p.value),INT));
   const B=dual?niceAxis(pts.filter(p=>p.reps!=null).map(p=>p.reps),INT):null;
+  const dots=n<=45;      /* past that the markers merge into the line anyway */
   const X=i=> n===1 ? (padL+(W-padL-padR)/2) : padL+(W-padL-padR)*(i/(n-1));
   const yOf=(v,ax)=> padT+(H-padT-padB)*(1-(v-ax.lo)/(ax.hi-ax.lo));
   const Y=v=>yOf(v,A), Y2=v=>yOf(v,B);
@@ -1760,7 +1773,7 @@ function buildChart(pts,unit,repLabel,levelNames,pair){
     if(rp.length>1) svg.appendChild(mk('path',{d:rp.map((o,k)=>(k?'L':'M')+X(o.i)+' '+Y2(o.v)).join(' '),
       fill:'none',stroke:'var(--chart2)','stroke-width':2,'stroke-dasharray':'5 4',
       'stroke-linejoin':'round','stroke-linecap':'round'}));
-    rp.forEach(o=>{
+    if(dots) rp.forEach(o=>{
       svg.appendChild(mk('circle',{cx:X(o.i),cy:Y2(o.v),r:5,fill:'var(--surface)'}));
       svg.appendChild(mk('circle',{cx:X(o.i),cy:Y2(o.v),r:3.5,fill:'var(--chart2)'}));
     });
@@ -1770,14 +1783,14 @@ function buildChart(pts,unit,repLabel,levelNames,pair){
     if(n>1) svg.appendChild(mk('path',{d:pts.map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.low)).join(' '),
       fill:'none',stroke:'var(--chart)','stroke-width':2,opacity:.45,
       'stroke-linejoin':'round','stroke-linecap':'round'}));
-    pts.forEach((p,i)=>{
+    if(dots) pts.forEach((p,i)=>{
       svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.low),r:5,fill:'var(--surface)'}));
       svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.low),r:4,fill:'var(--chart)',opacity:.45}));
     });
   }
   if(n>1) svg.appendChild(mk('path',{d:pts.map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.value)).join(' '),
     fill:'none',stroke:'var(--chart)','stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
-  pts.forEach((p,i)=>{
+  if(dots) pts.forEach((p,i)=>{
     svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.value),r:5,fill:'var(--surface)'}));
     svg.appendChild(mk('circle',{cx:X(i),cy:Y(p.value),r:4,fill:'var(--chart)'}));
   });
@@ -3047,7 +3060,10 @@ function reportHTML(m){
   }
   P.push(`</tbody></table></section>`);
   // 04 charts
-  const chartable=[...m.series.entries()].filter(([n,pts])=>pts.length>1);
+  /* meditation is his own business, not the physio's — it has been kept out of
+     the log and the tables all along, and must stay out of the charts too */
+  const chartable=[...m.series.entries()]
+    .filter(([n,pts])=>pts.length>1&&pts.unit!=='points');
   if(chartable.length){
     P.push(`<section><div class="shead"><span class="snum">04</span><h2>Progress charts</h2>
       <span class="hint">${chartable.length} exercises</span></div>
