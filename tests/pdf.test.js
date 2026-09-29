@@ -77,10 +77,11 @@ const t = suite('pdf');
 
   // --- the content ---
   t.check('titled', raw.includes('Shoulder rehabilitation'));
-  t.check('has the programme', raw.includes('1. CURRENT PROGRAMME'));
-  t.check('has the session log', raw.includes('2. SESSION LOG'));
-  t.check('has the progression', raw.includes('3. LOAD PROGRESSION'));
-  t.check('has the blood pressure', raw.includes('4. BLOOD PRESSURE'));
+  t.check('has the summary', raw.includes('1. SUMMARY SINCE LAST PHYSIO VISIT'));
+  t.check('has the programme', raw.includes('2. CURRENT PROGRAMME'));
+  t.check('has the session log', raw.includes('3. SESSION LOG'));
+  t.check('has the progression', raw.includes('4. LOAD PROGRESSION'));
+  t.check('has the blood pressure', raw.includes('5. BLOOD PRESSURE'));
   t.check('has the charts', raw.includes('PROGRESS CHARTS'));
   t.check('has the full data', raw.includes('FULL DATA'));
   t.check('the readings are in it', raw.includes('113') && raw.includes('After workout'));
