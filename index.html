@@ -209,6 +209,8 @@ table.dtl td{padding:8px 6px; border-top:1px solid var(--grid); vertical-align:t
 table.dtl tr:first-child td{border-top:0}
 table.dtl td.num{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; color:var(--ink-2)}
 .skiptag{color:var(--danger); font-weight:700; font-size:12px; letter-spacing:.04em}
+.savedtag{flex:none; font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase;
+  color:var(--done); background:var(--done-bg); border-radius:999px; padding:3px 8px; white-space:nowrap}
 
 /* tab bar */
 nav.tabs{
@@ -393,7 +395,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v47';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v48';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -916,6 +918,7 @@ let draftFlush=null;
 function viewCapture(M,sessionKey,editId){
   setTab('home');
   let entry, isEdit=false, draftEx={};
+  const preSaved=new Set();        /* names this day already has logged for this session */
   if(editId){
     const src=S.entries.find(x=>x.id===editId);
     if(!src){ M.innerHTML='<p class="empty">Entry not found.</p>'; setBar('Edit','home'); return; }
@@ -936,8 +939,13 @@ function viewCapture(M,sessionKey,editId){
     const seedFrom=S.entries.find(e=>e.type==='workout'&&e.date===todayStr());
     if(seedFrom) for(const r of entry.exercises){
       const ex=seedFrom.exercises.find(x=>x.name===r.name);
-      if(ex){ r.load=JSON.parse(JSON.stringify(ex.load)); r.sets=ex.sets; r.reps=ex.reps;
-        if(ex.level) r.level=JSON.parse(JSON.stringify(ex.level)); }
+      if(ex&&!ex.skipped){
+        r.load=JSON.parse(JSON.stringify(ex.load)); r.sets=ex.sets; r.reps=ex.reps;
+        if(ex.level) r.level=JSON.parse(JSON.stringify(ex.level));
+        /* it is already in the day, so the screen should show it done rather than
+           blank — half a session used to come back looking untouched */
+        preSaved.add(r.name);
+      }
     }
     /* an interrupted workout wins over the defaults */
     const d=readDraft();
@@ -986,6 +994,7 @@ function viewCapture(M,sessionKey,editId){
     row.innerHTML=`<div class="extitle">
         ${isEdit?'':'<button class="donebtn" title="Mark done">'+ico('check',18)+'</button>'}
         <span class="exname">${esc(x.name)}</span>
+        ${preSaved.has(x.name)&&!isEdit?'<span class="savedtag">saved earlier</span>':''}
         ${hasVid?'<button class="videobtn" title="Watch video">'+ico('play',15)+'</button>':''}
         ${isEdit?'<button class="skipbtn '+(x.skipped?'on':'')+'">'+(x.skipped?'Skipped':'Skip')+'</button>':''}
       </div>
@@ -997,9 +1006,11 @@ function viewCapture(M,sessionKey,editId){
     const doneB=row.querySelector('.donebtn');
     const setB=row.querySelector('.setbtn'), marksEl=row.querySelector('.setmarks');
     const dx=draftEx[x.name]||null;
+    const already=preSaved.has(x.name)&&!dx;   /* a live draft always wins over the record */
     let sets=(dx&&dx.setsDone)||0;   // sets ticked off so far, restored from the draft
-    setCounts.set(x,sets);
     const target=()=>Math.max(1,Math.round(x.sets)||1);
+    if(already) sets=target();
+    setCounts.set(x,sets);
     const setDone=(on,celebrate)=>{
       row.classList.toggle('done',on);
       if(doneB) doneB.classList.toggle('on',on);
@@ -1031,7 +1042,9 @@ function viewCapture(M,sessionKey,editId){
       if(sets>=target()) setDone(true,true);
     };
     renderMarks();
+    /* never celebrate on the way in — that is for ticking something yourself */
     if(dx&&dx.done) setDone(true,false);   // restore a completed exercise
+    else if(already) setDone(true,false);  // already logged earlier today
     const skipB=row.querySelector('.skipbtn');
     if(skipB) skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
       skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip';
@@ -1121,7 +1134,14 @@ function viewCapture(M,sessionKey,editId){
     }
     /* only ticked-off exercises make it into the day */
     const chosen=entry.exercises.filter(x=>doneSet.has(x));
-    if(!chosen.length){ alert('Tick off at least one exercise before saving.'); return; }
+    /* unticking something the day already held means taking it back out — only
+       for today, since that is the day the ticks were seeded from */
+    const drop=date===todayStr()
+      ? entry.exercises.filter(x=>preSaved.has(x.name)&&!doneSet.has(x)).map(x=>x.name)
+      : [];
+    if(!chosen.length&&!drop.length){ alert('Tick off at least one exercise before saving.'); return; }
+    if(drop.length&&!confirm('Remove '+drop.join(', ')+' from today?\n'+
+      (drop.length===1?'It was':'They were')+' already logged, and this cannot be undone.')) return;
     /* one workout per day: merge into that day's entry if it exists */
     let b=S.entries.find(e=>e.type==='workout'&&e.date===date);
     if(!b){
@@ -1129,19 +1149,32 @@ function viewCapture(M,sessionKey,editId){
     } else {
       for(const r of chosen){
         const ex=b.exercises.find(x=>x.name===r.name);
-        if(ex){ ex.load=r.load; ex.sets=r.sets; ex.reps=r.reps; ex.skipped=false; }
+        if(ex){ ex.load=r.load; ex.sets=r.sets; ex.reps=r.reps; ex.level=r.level; ex.skipped=false; }
         else b.exercises.push(r);
       }
+      if(drop.length) b.exercises=b.exercises.filter(x=>!drop.includes(x.name));
       if(!b.sessions) b.sessions=b.session?[b.session]:[];
       if(!b.sessions.includes(sessionKey)) b.sessions.push(sessionKey);
       if(note) b.note=b.note?b.note+'\n'+note:note;
+      /* a session with nothing left in it should stop being listed on the card */
+      b.sessions=b.sessions.filter(k=>{
+        const t=S.templates[k]; if(!t) return true;
+        return b.exercises.some(x=>t.exercises.some(te=>te.name===x.name));
+      });
+    }
+    if(!b.exercises.length){
+      await deleteEntry(b.id);
+      clearDraft(); draftFlush=null;
+      toast('Nothing left — the day was removed');
+      nav('home');
+      return;
     }
     await saveEntry(b);
     await syncDefaults(chosen);
     clearDraft(); draftFlush=null;
-    toast('Workout saved');
+    toast(drop.length&&!chosen.length?'Workout updated':'Workout saved');
     /* offered on the home screen he lands on, so saving stays one tap */
-    justSaved={id:b.id, session:sessionKey};
+    if(chosen.length) justSaved={id:b.id, session:sessionKey};
     nav('home');
   };
   formBar(isEdit?'Edit Workout':'Session '+sessionKey, isEdit?('entry/'+editId):'capture', doSave);
