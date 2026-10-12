@@ -1,7 +1,7 @@
 {
   "name": "Gym Trainer",
   "short_name": "Gym",
-  "description": "Track gym workouts: Day 1 / Day 2 plans, single exercises, PRs and weekly overview.",
+  "description": "Track gym workouts: the A/B/C/D programme, single exercises, PRs and weekly overview.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
