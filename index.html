@@ -21,6 +21,11 @@
   --tint-a-bg:#e8f0fb; --tint-a-ink:#1c5cab;
   --tint-b-bg:#fcebe2; --tint-b-ink:#b4441c;
   --tint-c-bg:#e2f4ec; --tint-c-ink:#0d7a52;
+  --tint-d-bg:#e0f2f6; --tint-d-ink:#0b6b7d;
+  --tint-e-bg:#f3eafa; --tint-e-ink:#6b3aa7;
+  --tint-f-bg:#fdf1e4; --tint-f-ink:#8a5a16;
+  --tint-g-bg:#eceef2; --tint-g-ink:#44536b;
+  --tint-h-bg:#f6eee0; --tint-h-ink:#6d5a2a;
   --tint-p-bg:#eceafa; --tint-p-ink:#4a3aa7;
   --tint-i-bg:#fbe7e6; --tint-i-ink:#a53730;
   --done:#0ca30c; --done-bg:#eaf7ea;
@@ -98,9 +103,6 @@ main{padding:16px; max-width:560px; margin:0 auto}
   padding:0 6px; flex:none; letter-spacing:.02em;
 }
 .badge svg{display:block}
-.badge.A{background:var(--tint-a-bg); color:var(--tint-a-ink)}
-.badge.B{background:var(--tint-b-bg); color:var(--tint-b-ink)}
-.badge.C{background:var(--tint-c-bg); color:var(--tint-c-ink)}
 .badge.physio{background:var(--tint-p-bg); color:var(--tint-p-ink)}
 .badge.injury{background:var(--tint-i-bg); color:var(--tint-i-ink)}
 .badge.swim{background:var(--tint-s-bg); color:var(--tint-s-ink)}
@@ -291,9 +293,6 @@ details.datatable td,details.datatable th{padding:5px 6px; border-top:1px solid 
   font-family:inherit; font-weight:700; font-size:11.5px; letter-spacing:.02em;
   box-shadow:inset 0 0 0 1px var(--ring); cursor:pointer}
 .dbtn.on{box-shadow:none}
-.dbtn.on.A{background:var(--tint-a-bg); color:var(--tint-a-ink)}
-.dbtn.on.B{background:var(--tint-b-bg); color:var(--tint-b-ink)}
-.dbtn.on.C{background:var(--tint-c-bg); color:var(--tint-c-ink)}
 .cellv{border:0; background:none; font:inherit; color:var(--accent); font-weight:650; cursor:pointer;
   padding:3px 2px; min-width:34px; text-align:right; text-decoration:underline;
   text-decoration-style:dotted; text-underline-offset:3px; font-variant-numeric:tabular-nums}
@@ -395,7 +394,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v48';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v49';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -455,17 +454,38 @@ function seedTemplates(){
     ]},
   };
 }
+/* ================= sessions =================
+   The programme is whatever sessions the templates hold: A, B and C to start
+   with, plus any he adds later. Everywhere that used to loop over a typed
+   ['A','B','C'] asks these two instead. Keys sort alphabetically, so a new D
+   falls in after C on its own. */
+const SESS_TINTS=['a','b','c','d','e','f','g','h'];
+const sessKeyOk=k=>/^[A-Z][A-Z0-9]?$/.test(k);
+const allSessionKeys=()=>Object.keys(S.templates||{}).sort();
+const sessionKeys=()=>allSessionKeys().filter(k=>!S.templates[k].archived);
+const sessName=k=>(S.templates&&S.templates[k]?S.templates[k].name:'Session '+k);
+/* one badge colour per session, handed out in key order and cycling past eight */
+function applySessionTints(){
+  let el=document.getElementById('sessTint');
+  if(!el){ el=document.createElement('style'); el.id='sessTint'; document.head.appendChild(el); }
+  el.textContent=allSessionKeys().map((k,i)=>{
+    const t=SESS_TINTS[i%SESS_TINTS.length];
+    return '.badge.'+k+',.dbtn.on.'+k+'{background:var(--tint-'+t+'-bg); color:var(--tint-'+t+'-ink)}';
+  }).join('\n');
+}
+
 async function loadState(){
   let t=await kvGet('templates');
   if(!t){ t=seedTemplates(); await kvSet('templates',t); }
   // migration guard: ensure fields exist
-  for(const k of ['A','B','C']) if(t[k]) t[k].exercises.forEach(e=>{ if(!e.mode)e.mode='reps'; if(!('videoId'in e))e.videoId=null;
+  for(const k of Object.keys(t)) if(t[k]) t[k].exercises.forEach(e=>{ if(!e.mode)e.mode='reps'; if(!('videoId'in e))e.videoId=null;
     const sp=levelSpec(e.name);
     if(sp&&!e.levels){
       e.levels=sp.names.map(name=>({name,sets:e.sets,reps:e.reps}));
       e.level=0;
     } });
   S.templates=t;
+  applySessionTints();
   S.plan=(await kvGet('weekPlan'))||[null,null,null,null,null,null,null];
   await seedHistory();
   S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
@@ -525,13 +545,13 @@ async function seedHistory(){
   }
   await kvSet('seedHistoryV1',true);
 }
-const saveTemplates=()=>kvSet('templates',S.templates);
+const saveTemplates=()=>{ applySessionTints(); return kvSet('templates',S.templates); };
 /* what was actually done becomes the default for next time */
 async function syncDefaults(rows){
   let changed=false;
   for(const r of rows){
     if(r.skipped) continue;
-    for(const k of ['A','B','C']){
+    for(const k of allSessionKeys()){
       const te=S.templates[k]&&S.templates[k].exercises.find(x=>x.name===r.name);
       if(!te) continue;
       if(JSON.stringify(te.load)!==JSON.stringify(r.load)){ te.load=JSON.parse(JSON.stringify(r.load)); changed=true; }
@@ -615,7 +635,7 @@ const LEVELLED=[
 const levelSpec=name=>LEVELLED.find(l=>l.re.test(String(name||'').trim()))||null;
 /* the levels defined for an exercise, looked up by name across the sessions */
 function levelsFor(name){
-  for(const k of ['A','B','C']){
+  for(const k of allSessionKeys()){
     const te=S.templates&&S.templates[k]&&S.templates[k].exercises.find(x=>x.name===name);
     if(te&&te.levels) return te.levels;
   }
@@ -757,6 +777,7 @@ function render(){
     if(parts[0]==='editworkout') return viewCapture(M,null,parts[1]);
     if(parts[0]==='settings') return viewSettings(M);
     if(parts[0]==='report') return viewReport(M);
+    if(parts[0]==='session') return viewSession(M,parts[1]);
     if(parts[0]==='exercise') return viewExercise(M,parts[1],parts[2]);
     if(parts[0]==='progress') return viewProgress(M,parts.slice(1).join('/'));
     viewHome(M);
@@ -863,8 +884,12 @@ function viewHome(M){
 
 function viewPick(M){
   setBar('Capture Workout','home'); setTab('home');
-  const planned=S.plan?S.plan[todayIdx()]:null;   /* the session this day is scheduled for */
-  for(const k of ['A','B','C']){
+  let planned=S.plan?S.plan[todayIdx()]:null;   /* the session this day is scheduled for */
+  if(planned&&!sessionKeys().includes(planned)) planned=null;
+  const keys=sessionKeys();
+  if(!keys.length) M.insertAdjacentHTML('beforeend',
+    '<p class="empty">No sessions yet — add one under Exercises.</p>');
+  for(const k of keys){
     const t=S.templates[k];
     const b=document.createElement('button'); b.className='pickbtn'+(k===planned?' planned':'');
     b.innerHTML=`<span class="badge ${k}">${k}</span><span class="pickmain"><span class="pickname">${esc(t.name)}</span>${
@@ -873,7 +898,7 @@ function viewPick(M){
     M.appendChild(b);
   }
   if(planned) M.insertAdjacentHTML('beforeend',
-    `<p class="cue" style="margin:6px 2px 0">${esc(S.templates[planned].name)} is scheduled for today — any session can still be captured.</p>`);
+    `<p class="cue" style="margin:6px 2px 0">${esc(sessName(planned))} is scheduled for today — any session can still be captured.</p>`);
   /* activities live below the sessions, set apart by a labelled divider */
   M.insertAdjacentHTML('beforeend','<div class="pickdiv"><span>Other activity</span></div>');
   [['swim','waves','Swimming','laps and stroke'],
@@ -1106,7 +1131,7 @@ function viewCapture(M,sessionKey,editId){
 
   if(isEdit) $('#bAddEx').onclick=()=>{
     const present=new Set(entry.exercises.map(x=>x.name)), seen=new Set(), opts=[];
-    for(const k of ['A','B','C']) for(const e of S.templates[k].exercises)
+    for(const k of sessionKeys()) for(const e of S.templates[k].exercises)
       if(!present.has(e.name)&&!seen.has(e.name)){ seen.add(e.name); opts.push({k,e}); }
     if(!opts.length){ alert('All exercises are already in this workout.'); return; }
     const box=$('#addSel'); box.classList.remove('hidden');
@@ -1394,7 +1419,7 @@ function weekPlanStrip(){
   wrap.appendChild(strip);
   const k=S.plan[todayIdx()];
   const line=document.createElement('div'); line.className='wptoday';
-  line.textContent=k?('Today · '+S.templates[k].name):'Today · rest day';
+  line.textContent=k?('Today · '+sessName(k)):'Today · rest day';
   wrap.appendChild(line);
   return wrap;
 }
@@ -1402,12 +1427,14 @@ function viewSettings(M){
   setBar('Exercises'); setTab('settings');
   M.insertAdjacentHTML('beforeend','<div class="sectionlabel" style="margin-top:4px">Weekly plan</div>');
   M.appendChild(weekPlanStrip());
-  for(const k of ['A','B','C']){
+  for(const k of sessionKeys()){
     const t=S.templates[k];
     const sec=document.createElement('div');
-    sec.innerHTML=`<div class="sectionlabel"><span class="badge ${k}" style="min-width:22px;height:22px;font-size:12px">${k}</span>${esc(t.name)}</div>
+    sec.innerHTML=`<div class="sectionlabel"><span class="badge ${k}" style="min-width:22px;height:22px;font-size:12px">${k}</span>${esc(t.name)}
+        <button class="iconbtn sessedit" style="margin-left:auto" title="Edit session">${ico('pencil',15)}</button></div>
       <div class="daypick">${DAYS.map((d,i)=>
         `<button class="dbtn ${S.plan[i]===k?'on '+k:''}" data-i="${i}">${d[0]}${d[1]}</button>`).join('')}</div>`;
+    sec.querySelector('.sessedit').onclick=()=>nav('session/'+k);
     sec.querySelectorAll('.dbtn').forEach(btn=>{
       btn.onclick=async()=>{
         const i=+btn.dataset.i;
@@ -1432,6 +1459,27 @@ function viewSettings(M){
     add.textContent='+ Add exercise'; add.onclick=()=>nav('exercise/'+k+'/new');
     sec.appendChild(card); sec.appendChild(add); M.appendChild(sec);
   }
+  const addSess=document.createElement('button');
+  addSess.className='btn secondary'; addSess.style.marginTop='20px';
+  addSess.textContent='+ Add session'; addSess.onclick=()=>nav('session/new');
+  M.appendChild(addSess);
+
+  /* sessions taken out of the programme but kept for the history they carry */
+  const gone=allSessionKeys().filter(k=>S.templates[k].archived);
+  if(gone.length){
+    const off=document.createElement('div');
+    off.innerHTML='<div class="sectionlabel">Not in the programme</div>';
+    const c=document.createElement('div'); c.className='card';
+    for(const k of gone){
+      const row=document.createElement('div'); row.className='setrow';
+      row.innerHTML=`<div class="setname"><div class="n"><span class="badge ${k}" style="min-width:20px;height:20px;font-size:11px;margin-right:7px">${k}</span>${esc(S.templates[k].name)}</div>
+        <div class="s">${S.templates[k].exercises.length} exercises · kept for past workouts</div></div>
+        <button class="iconbtn edit">${ico('pencil',15)}</button>`;
+      row.querySelector('.edit').onclick=()=>nav('session/'+k);
+      c.appendChild(row);
+    }
+    off.appendChild(c); M.appendChild(off);
+  }
   const bk=document.createElement('div');
   bk.innerHTML=`<div class="sectionlabel">Physio report</div>
     <button class="btn secondary" id="bRep">Open report for physio</button>
@@ -1448,6 +1496,109 @@ function viewSettings(M){
   $('#bExp').onclick=exportData;
   $('#bImp').onclick=()=>$('#fImp').click();
   $('#fImp').onchange=importData;
+}
+
+/* ============ add / edit a session ============
+   The sessions are data now, so this screen is the only place their letter,
+   label and membership of the programme are decided. */
+function nextSessionKey(){
+  const taken=new Set(allSessionKeys());
+  for(const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') if(!taken.has(c)) return c;
+  return '';
+}
+/* how many saved workouts still point at this session */
+const sessUseCount=k=>S.entries.filter(e=>e.type==='workout'&&
+  ((e.sessions&&e.sessions.includes(k))||e.session===k)).length;
+
+/* Changing a session's letter has to change it everywhere, or every workout
+   already logged under the old letter loses its label. */
+async function renameSessionKey(from,to){
+  const t=S.templates[from];
+  delete S.templates[from];
+  t.key=to; S.templates[to]=t;
+  for(let i=0;i<S.plan.length;i++) if(S.plan[i]===from) S.plan[i]=to;
+  await savePlan();
+  await saveTemplates();
+  for(const e of S.entries){
+    if(e.type!=='workout') continue;
+    let touched=false;
+    if(e.session===from){ e.session=to; touched=true; }
+    if(Array.isArray(e.sessions)&&e.sessions.includes(from)){
+      e.sessions=e.sessions.map(x=>x===from?to:x); touched=true;
+    }
+    if(touched) await entryPut(e);
+  }
+  const d=readDraft();
+  if(d&&d.session===from) writeDraft(Object.assign({},d,{session:to}));
+}
+
+function viewSession(M,key){
+  setTab('settings');
+  const isNew=key==='new';
+  if(!isNew&&!S.templates[key]){ nav('settings'); return; }
+  const t=isNew?null:S.templates[key];
+  const used=isNew?0:sessUseCount(key);
+  const title=isNew?'New session':'Edit session';
+  setBar(title,'settings');
+  M.innerHTML=`
+    <div class="field"><label>Letter</label>
+      <input type="text" id="fKey" value="${esc(isNew?nextSessionKey():key)}" maxlength="2"
+        autocapitalize="characters" style="text-transform:uppercase" placeholder="D"></div>
+    <p class="cue" style="margin:-6px 2px 14px">One or two characters — this is the badge shown on the session and in your history.</p>
+    <div class="field"><label>Label</label>
+      <input type="text" id="fName" value="${esc(isNew?'':t.name)}" placeholder="e.g. Rotator cuff &amp; band work"></div>
+    <p class="cue" style="margin:-6px 2px 18px">The name that appears on the capture screen, the weekly plan and the physio report.</p>
+    <button class="btn" id="bSave">${isNew?'Add Session':'Save Session'}</button>
+    ${isNew?'':`<button class="btn secondary" id="bRemove" style="margin-top:10px;color:var(--danger)">${
+      t.archived?'Put back in the programme':(used?'Take out of the programme':'Delete Session')}</button>`}
+    ${isNew?'':`<p class="cue" style="margin:8px 2px 24px">${
+      t.archived?'This session is hidden from the capture screen; the '+used+' workout'+(used===1?'':'s')+' logged under it keep their history.'
+      :(used?used+' workout'+(used===1?' is':'s are')+' logged under '+key+', so it can be taken out of the programme but not deleted — the history keeps its label either way.'
+           :'Nothing is logged under this session yet, so it can be deleted outright.')}</p>`}`;
+
+  const doSave=async()=>{
+    const nk=$('#fKey').value.trim().toUpperCase();
+    const nm=$('#fName').value.trim();
+    if(!sessKeyOk(nk)){ alert('The letter must be one or two characters, starting with a letter A–Z.'); return; }
+    if(!nm){ alert('Please give the session a label.'); return; }
+    if(nk!==key&&S.templates[nk]){ alert('Session '+nk+' already exists.'); return; }
+    if(isNew){
+      S.templates[nk]={key:nk,name:nm,exercises:[]};
+      await saveTemplates();
+      toast('Session '+nk+' added'); nav('exercise/'+nk+'/new'); return;
+    }
+    if(nk!==key){
+      if(used&&!confirm('Rename session '+key+' to '+nk+'?\nThe '+used+' workout'+(used===1?'':'s')+
+        ' already logged under '+key+' will be relabelled '+nk+' too, so your charts stay in one piece.')) return;
+      await renameSessionKey(key,nk);
+    }
+    S.templates[nk].name=nm;
+    await saveTemplates(); toast('Saved'); nav('settings');
+  };
+  formBar(title,'settings',doSave);
+  $('#bSave').onclick=doSave;
+
+  const rm=$('#bRemove');
+  if(rm) rm.onclick=async()=>{
+    if(t.archived){
+      delete t.archived; await saveTemplates(); toast('Back in the programme'); nav('settings'); return;
+    }
+    if(used){
+      if(!confirm('Take '+key+' out of the programme?\nIt disappears from the capture screen and the physio report, '+
+        'but the '+used+' workout'+(used===1?'':'s')+' logged under it keep their history. You can put it back any time.')) return;
+      t.archived=true;
+      for(let i=0;i<S.plan.length;i++) if(S.plan[i]===key) S.plan[i]=null;
+      await savePlan();
+    } else {
+      if(!confirm('Delete session '+key+' and its '+t.exercises.length+' exercise'+
+        (t.exercises.length===1?'':'s')+'? Nothing is logged under it, so nothing is lost.')) return;
+      for(const ex of t.exercises) if(ex.videoId) await videoDel(ex.videoId).catch(()=>{});
+      delete S.templates[key];
+      for(let i=0;i<S.plan.length;i++) if(S.plan[i]===key) S.plan[i]=null;
+      await savePlan();
+    }
+    await saveTemplates(); toast(used?'Taken out':'Deleted'); nav('settings');
+  };
 }
 
 function viewExercise(M,sess,exId){
@@ -3170,7 +3321,7 @@ function reportHTML(m){
 
   P.push(`<section><div class="shead"><span class="snum">02</span><h2>Current programme</h2>
     <span class="hint">as of ${esc(fmtFull(todayStr()))}</span></div>`);
-  for(const k of ['A','B','C']){
+  for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
     const sched=planDaysFor(k);
     P.push(`<table><caption><span class="code">${k}</span>${esc(t.name)} · ${t.exercises.length} exercises${
@@ -3282,7 +3433,7 @@ function reportText(m){
   }
   L.push('');
   L.push('2. CURRENT PROGRAMME');
-  for(const k of ['A','B','C']){
+  for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
     L.push('');L.push(t.name);
     L.push(tab(['Exercise','Load','Sets','Reps']));
@@ -3357,7 +3508,7 @@ function reportEmailHTML(m){
     table(['Date','Type','Note'],z.notes.map(nt=>[fmtFull(nt.date),nt.label,nt.text]),0);
   }
   P.push(`<div style="${H2}">2 · Current programme</div>`);
-  for(const k of ['A','B','C']){
+  for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
     P.push(`<div style="${F};font-size:13px;font-weight:700;margin:12px 0 4px">${esc(t.name)}</div>`);
     table(['Exercise','Load','Sets × reps','Cue'],
@@ -3706,7 +3857,7 @@ function reportPDF(m){
   }
 
   pdfHeading(d,2,'Current programme');
-  for(const k of ['A','B','C']){
+  for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
     d.room(60);
     d.text(t.name,PT.M,9.5,{bold:true,rgb:PDF_INK}); d.y-=13;
