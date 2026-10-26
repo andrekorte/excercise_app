@@ -395,7 +395,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v50';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v51';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -552,6 +552,8 @@ async function syncDefaults(rows){
   let changed=false;
   for(const r of rows){
     if(r.skipped) continue;
+    /* stopping after one of three sets must not make one set the plan */
+    const planned=(r.plan&&r.plan>r.sets)?r.plan:r.sets;
     for(const k of allSessionKeys()){
       const te=S.templates[k]&&S.templates[k].exercises.find(x=>x.name===r.name);
       if(!te) continue;
@@ -560,20 +562,20 @@ async function syncDefaults(rows){
       if(hasPlaces(te)&&r.place&&te.places[r.place.i]){
         const P=te.places[r.place.i];
         if(JSON.stringify(P.load)!==JSON.stringify(r.load)){ P.load=JSON.parse(JSON.stringify(r.load)); changed=true; }
-        if(P.sets!==r.sets){ P.sets=r.sets; changed=true; }
+        if(P.sets!==planned){ P.sets=planned; changed=true; }
         if(P.reps!==r.reps){ P.reps=r.reps; changed=true; }
         if(te.place!==r.place.i){ te.place=r.place.i; changed=true; }
         if(changed) mirrorPlace(te);
         continue;
       }
       if(JSON.stringify(te.load)!==JSON.stringify(r.load)){ te.load=JSON.parse(JSON.stringify(r.load)); changed=true; }
-      if(te.sets!==r.sets){ te.sets=r.sets; changed=true; }
+      if(te.sets!==planned){ te.sets=planned; changed=true; }
       if(te.reps!==r.reps){ te.reps=r.reps; changed=true; }
       /* a levelled exercise files its numbers under the level they were done at,
          so a short floor session never overwrites the bed figures */
       if(te.levels&&r.level&&te.levels[r.level.i]){
         const L=te.levels[r.level.i];
-        if(L.sets!==r.sets||L.reps!==r.reps){ L.sets=r.sets; L.reps=r.reps; changed=true; }
+        if(L.sets!==planned||L.reps!==r.reps){ L.sets=planned; L.reps=r.reps; changed=true; }
         if(te.level!==r.level.i){ te.level=r.level.i; changed=true; }
       }
     }
@@ -679,7 +681,9 @@ function mirrorPlace(te){
   te.load=JSON.parse(JSON.stringify(p.load)); te.sets=p.sets; te.reps=p.reps;
 }
 const placeOf=x=>x&&x.place?x.place:null;
-function fmtVol(x){ return x.sets+' × '+x.reps+(x.mode==='secs'?' s':''); }
+/* a workout stopped part way reads "1 of 3", not a bare "1" */
+function fmtVol(x){ return (x.plan&&x.plan>x.sets?x.sets+' of '+x.plan:x.sets)+
+  ' × '+x.reps+(x.mode==='secs'?' s':''); }
 function weekCount(){
   const now=new Date(); const day=(now.getDay()+6)%7; // Mon=0
   const mon=new Date(now); mon.setDate(now.getDate()-day); mon.setHours(0,0,0,0);
@@ -980,6 +984,7 @@ function viewCapture(M,sessionKey,editId){
   setTab('home');
   let entry, isEdit=false, draftEx={};
   const preSaved=new Set();        /* names this day already has logged for this session */
+  const preSets=new Map();         /* and how many sets of each were got through */
   if(editId){
     const src=S.entries.find(x=>x.id===editId);
     if(!src){ M.innerHTML='<p class="empty">Entry not found.</p>'; setBar('Edit','home'); return; }
@@ -1001,7 +1006,11 @@ function viewCapture(M,sessionKey,editId){
     if(seedFrom) for(const r of entry.exercises){
       const ex=seedFrom.exercises.find(x=>x.name===r.name);
       if(ex&&!ex.skipped){
-        r.load=JSON.parse(JSON.stringify(ex.load)); r.sets=ex.sets; r.reps=ex.reps;
+        r.load=JSON.parse(JSON.stringify(ex.load)); r.reps=ex.reps;
+        /* the stepper shows the plan; how much of it was done lives in preSets,
+           so a session stopped at one of three comes back as one of three */
+        r.sets=(ex.plan&&ex.plan>ex.sets)?ex.plan:ex.sets;
+        preSets.set(r.name,ex.sets);
         if(ex.level) r.level=JSON.parse(JSON.stringify(ex.level));
         if(ex.place) r.place=JSON.parse(JSON.stringify(ex.place));
         /* it is already in the day, so the screen should show it done rather than
@@ -1058,7 +1067,10 @@ function viewCapture(M,sessionKey,editId){
     row.innerHTML=`<div class="extitle">
         ${isEdit?'':'<button class="donebtn" title="Mark done">'+ico('check',18)+'</button>'}
         <span class="exname">${esc(x.name)}</span>
-        ${preSaved.has(x.name)&&!isEdit?'<span class="savedtag">saved earlier</span>':''}
+        ${preSaved.has(x.name)&&!isEdit?'<span class="savedtag">'+
+          (preSets.get(x.name)&&preSets.get(x.name)<Math.max(1,Math.round(x.sets)||1)
+            ? preSets.get(x.name)+' set'+(preSets.get(x.name)===1?'':'s')+' saved'
+            : 'saved earlier')+'</span>':''}
         ${hasVid?'<button class="videobtn" title="Watch video">'+ico('play',15)+'</button>':''}
         ${isEdit?'<button class="skipbtn '+(x.skipped?'on':'')+'">'+(x.skipped?'Skipped':'Skip')+'</button>':''}
       </div>
@@ -1073,7 +1085,7 @@ function viewCapture(M,sessionKey,editId){
     const already=preSaved.has(x.name)&&!dx;   /* a live draft always wins over the record */
     let sets=(dx&&dx.setsDone)||0;   // sets ticked off so far, restored from the draft
     const target=()=>Math.max(1,Math.round(x.sets)||1);
-    if(already) sets=target();
+    if(already) sets=Math.min(target(),Math.max(1,preSets.get(x.name)||target()));
     setCounts.set(x,sets);
     const setDone=(on,celebrate)=>{
       row.classList.toggle('done',on);
@@ -1107,8 +1119,8 @@ function viewCapture(M,sessionKey,editId){
     };
     renderMarks();
     /* never celebrate on the way in — that is for ticking something yourself */
-    if(dx&&dx.done) setDone(true,false);   // restore a completed exercise
-    else if(already) setDone(true,false);  // already logged earlier today
+    if(dx&&dx.done) setDone(true,false);           // restore a completed exercise
+    else if(already&&sets>=target()) setDone(true,false);  // finished earlier today
     const skipB=row.querySelector('.skipbtn');
     if(skipB) skipB.onclick=()=>{ x.skipped=!x.skipped; row.classList.toggle('skipped',x.skipped);
       skipB.classList.toggle('on',x.skipped); skipB.textContent=x.skipped?'Skipped':'Skip';
@@ -1225,14 +1237,22 @@ function viewCapture(M,sessionKey,editId){
       if(entry.date>=latestWorkoutDate()) await syncDefaults(entry.exercises);
       toast('Workout updated'); nav('entry/'+entry.id); return;
     }
-    /* only ticked-off exercises make it into the day */
-    const chosen=entry.exercises.filter(x=>doneSet.has(x));
+    /* one set counts: a session cut short is still a session, and the day
+       should hold what was actually done rather than nothing at all */
+    const didSets=x=>doneSet.has(x)?Math.max(1,Math.round(x.sets)||1):(setCounts.get(x)||0);
+    const chosen=entry.exercises.filter(x=>didSets(x)>0);
     /* unticking something the day already held means taking it back out — only
        for today, since that is the day the ticks were seeded from */
     const drop=date===todayStr()
-      ? entry.exercises.filter(x=>preSaved.has(x.name)&&!doneSet.has(x)).map(x=>x.name)
+      ? entry.exercises.filter(x=>preSaved.has(x.name)&&didSets(x)===0).map(x=>x.name)
       : [];
-    if(!chosen.length&&!drop.length){ alert('Tick off at least one exercise before saving.'); return; }
+    if(!chosen.length&&!drop.length){ alert('Mark off at least one set before saving.'); return; }
+    /* what was done is what gets written; the plan rides along so the screen can
+       pick the exercise back up at one of three */
+    for(const r of chosen){
+      const plan=Math.max(1,Math.round(r.sets)||1), did=Math.min(plan,didSets(r));
+      if(did<plan){ r.plan=plan; r.sets=did; } else { delete r.plan; r.sets=plan; }
+    }
     if(drop.length&&!confirm('Remove '+drop.join(', ')+' from today?\n'+
       (drop.length===1?'It was':'They were')+' already logged, and this cannot be undone.')) return;
     /* one workout per day: merge into that day's entry if it exists */
@@ -1242,7 +1262,8 @@ function viewCapture(M,sessionKey,editId){
     } else {
       for(const r of chosen){
         const ex=b.exercises.find(x=>x.name===r.name);
-        if(ex){ ex.load=r.load; ex.sets=r.sets; ex.reps=r.reps; ex.level=r.level; ex.place=r.place; ex.skipped=false; }
+        if(ex){ ex.load=r.load; ex.sets=r.sets; ex.reps=r.reps; ex.level=r.level; ex.place=r.place; ex.skipped=false;
+          if(r.plan) ex.plan=r.plan; else delete ex.plan; }
         else b.exercises.push(r);
       }
       if(drop.length) b.exercises=b.exercises.filter(x=>!drop.includes(x.name));
