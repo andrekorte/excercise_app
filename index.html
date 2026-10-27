@@ -395,7 +395,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v52';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v53';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -657,6 +657,14 @@ const LEVELLED=[
 ];
 /* the ladder an exercise is on, if it is on one */
 const levelSpec=name=>LEVELLED.find(l=>l.re.test(String(name||'').trim()))||null;
+/* the template an exercise came from, wherever in the programme it lives */
+function templateExercise(name){
+  for(const k of sessionKeys()){
+    const e=S.templates[k]&&S.templates[k].exercises.find(x=>x.name===name);
+    if(e) return e;
+  }
+  return null;
+}
 /* the levels defined for an exercise, looked up by name across the sessions */
 function levelsFor(name){
   for(const k of allSessionKeys()){
@@ -1032,6 +1040,16 @@ function viewCapture(M,sessionKey,editId){
     const d=readDraft();
     if(d&&d.session===sessionKey){
       draftEx=d.ex; entry.date=d.date||entry.date; entry.note=d.note||'';
+      /* anything added by hand mid-session is not in this session's template,
+         so it has to be put back from the draft before the rows are filled in */
+      for(const name of Object.keys(draftEx)){
+        if(entry.exercises.some(x=>x.name===name)) continue;
+        const te=templateExercise(name); if(!te) continue;
+        entry.exercises.push({name:te.name, cue:te.cue, load:JSON.parse(JSON.stringify(te.load)),
+          sets:te.sets, reps:te.reps, mode:te.mode, skipped:false,
+          level:tmplLevel(te), place:tmplPlace(te),
+          youtube:te.youtube||'', videoId:te.videoId||null, videoOwned:false});
+      }
       for(const r of entry.exercises){
         const dx=draftEx[r.name]; if(!dx) continue;
         if(dx.load!==undefined&&r.load) r.load.value=dx.load;
@@ -1049,7 +1067,8 @@ function viewCapture(M,sessionKey,editId){
   const wrap=document.createElement('div');
   wrap.innerHTML=`<div class="field"><label>Date</label><input type="date" id="fDate" value="${entry.date}" max="${todayStr()}"></div>
     ${isEdit?'':'<div class="weekline" id="doneCount" style="margin-top:2px"></div>'}<div id="exlist"></div>
-    ${isEdit?'<button class="btn secondary" id="bAddEx" style="margin-bottom:14px">+ Add exercise</button><div id="addSel" class="field hidden"></div>':''}
+    <button class="btn secondary" id="bAddEx" style="margin-bottom:14px">+ Add exercise</button>
+    <div id="addSel" class="field hidden"></div>
     <div class="field"><label>Note (optional)</label><textarea id="fNote" placeholder="e.g. shoulder felt tight">${esc(entry.note)}</textarea></div>
     <button class="btn" id="bSave">${isEdit?'Save Changes':'Save Workout'}</button>`;
   M.appendChild(wrap);
@@ -1219,7 +1238,7 @@ function viewCapture(M,sessionKey,editId){
       'and what should I be careful with today?','Yes');
   });
 
-  if(isEdit) $('#bAddEx').onclick=()=>{
+  $('#bAddEx').onclick=()=>{
     const present=new Set(entry.exercises.map(x=>x.name)), seen=new Set(), opts=[];
     for(const k of sessionKeys()) for(const e of S.templates[k].exercises)
       if(!present.has(e.name)&&!seen.has(e.name)){ seen.add(e.name); opts.push({k,e}); }
@@ -1235,6 +1254,7 @@ function viewCapture(M,sessionKey,editId){
         youtube:e.youtube||'', videoId:e.videoId||null, videoOwned:false};
       entry.exercises.push(x); addRowEl(x);
       box.classList.add('hidden'); box.innerHTML='';
+      updateCount(); saveDraftNow();
     };
   };
   const doSave=async()=>{
