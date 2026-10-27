@@ -395,7 +395,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v51';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v52';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -629,11 +629,21 @@ function fmtDate(iso){
   if(dt.getFullYear()===yd.getFullYear()&&dt.getMonth()===yd.getMonth()&&dt.getDate()===yd.getDate()) return 'Yesterday';
   return dt.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short',year:(dt.getFullYear()===new Date().getFullYear()?undefined:'numeric')});
 }
+/* the numbers that can be trended or compared; a band colour is not one */
+const NUMERIC_LOADS=['kg','bandKg','machine'];
+const isNumLoad=l=>!!l&&NUMERIC_LOADS.includes(l.kind);
+const loadNum=l=>{ if(!isNumLoad(l)) return null;
+  const v=parseFloat(l.value); return isNaN(v)?null:v; };
+/* the control that sets one: its caption and how far one tap moves it */
+const loadCaption=k=>k==='machine'?'Level':(k==='kg'?'Weight (kg)':'Band (kg)');
+const loadStep=k=>k==='kg'?0.5:1;
+
 function fmtLoad(load,tag){
   let base='';
   if(!load||load.kind==='none') base='bodyweight';
   else if(load.kind==='kg') base=load.value+' kg';
   else if(load.kind==='bandKg') base=load.value+' kg band';
+  else if(load.kind==='machine') base='level '+load.value;
   else if(load.kind==='bandColor') base=load.value+' band';
   const n=tag&&tag.name;
   return n?(base?base+' · '+n:n):base;
@@ -1128,8 +1138,8 @@ function viewCapture(M,sessionKey,editId){
     const ctls=row.querySelector('.controls');
     // load control
     let loadCtl=null;
-    if(x.load.kind==='kg'||x.load.kind==='bandKg'){
-      loadCtl=stepCtl(x.load.kind==='kg'?'Weight (kg)':'Band (kg)', x.load.value, x.load.kind==='kg'?0.5:1,
+    if(isNumLoad(x.load)){
+      loadCtl=stepCtl(loadCaption(x.load.kind), x.load.value, loadStep(x.load.kind),
         v=>{ x.load.value=v; saveDraftNow(); });
       ctls.appendChild(loadCtl);
     } else if(x.load.kind==='bandColor'){
@@ -1730,6 +1740,7 @@ function viewExercise(M,sess,exId){
     <div class="field"><label>Load type</label><select id="fKind">
       <option value="kg">Dumbbell / weight (kg)</option>
       <option value="bandKg">Band (kg)</option>
+      <option value="machine">Machine level</option>
       <option value="bandColor">Band (color)</option>
       <option value="none">Bodyweight / none</option></select></div>
     <div class="field" id="loadField"></div>
@@ -1766,11 +1777,16 @@ function viewExercise(M,sess,exId){
       $('#fLoad').oninput=e=>{ w.load={kind:'bandColor',value:e.target.value}; };
       w.load={kind:'bandColor',value:w.load.kind==='bandColor'?w.load.value:''};
     } else {
-      const cur=(typeof w.load.value==='number')?w.load.value:5;
-      lf.innerHTML='<label>'+(kind==='kg'?'Default weight (kg)':'Band strength (kg)')+'</label>';
+      /* 50 kg of band does not become machine level 50 */
+      const keep=w.load.kind===kind&&typeof w.load.value==='number';
+      const cur=keep?w.load.value:(kind==='machine'?1:5);
+      lf.innerHTML='<label>'+(kind==='machine'?'Default level'
+        :(kind==='kg'?'Default weight (kg)':'Band strength (kg)'))+'</label>';
       w.load={kind,value:cur};
-      lf.appendChild(stepCtl('',cur,kind==='kg'?0.5:1,v=>w.load.value=v));
+      lf.appendChild(stepCtl('',cur,loadStep(kind),v=>w.load.value=v));
       lf.querySelector('.ctl label').remove();
+      if(kind==='machine') lf.insertAdjacentHTML('beforeend',
+        '<p class="cue" style="margin:6px 2px 0">For a machine set by notch rather than by weight — the chart trends the level.</p>');
     }
   }
   function renderVol(){
@@ -1851,12 +1867,21 @@ function progressSeries(){
   const sorted=[...S.entries].filter(e=>e.type==='workout').sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
   for(const e of sorted) for(const x of e.exercises){
     if(x.skipped) continue;
-    if(!x.load||(x.load.kind!=='kg'&&x.load.kind!=='bandKg')) continue;
-    const v=parseFloat(x.load.value); if(isNaN(v)) continue;
+    const v=loadNum(x.load); if(v==null) continue;
     if(!map.has(x.name)) map.set(x.name,[]);
     const reps=parseFloat(x.reps);
     map.get(x.name).push({date:e.date, value:v, kind:x.load.kind, reps:isNaN(reps)?null:reps,
       mode:x.mode, place:x.place?x.place.name:null});
+  }
+  /* a kg reading and a machine notch are not the same scale, so an exercise
+     moved from one to the other trends only what it is on now — the earlier
+     sessions stay in the log and the report, and the chart says how many */
+  for(const [k,a] of map){
+    const kind=a[a.length-1].kind;
+    if(!kind||a.every(p=>p.kind===kind)) continue;
+    let i=a.length; while(i>0&&a[i-1].kind===kind) i--;
+    const kept=a.slice(i); kept.dropped=i; kept.unit=a.unit;
+    map.set(k,kept);
   }
   /* an exercise done in more than one place trends a line per place: one line
      jumping between a dumbbell and a machine is noise, not progress */
@@ -1994,18 +2019,20 @@ function chartBox(name,pts){
   const isPair=!!pts.pair;                       /* two lines sharing one scale */
   const split=pts.split||null;                   /* one line per place, same scale */
   const isMedSeries=pts.unit==='points';
-  const unit=pts.unit?pts.unit:(pts[0].kind==='bandKg'?'kg band':'kg');
+  const unit=pts.unit?pts.unit:(pts[0].kind==='bandKg'?'kg band':(pts[0].kind==='machine'?'level':'kg'));
   const noun=pts.unit==='laps'?'swim':(pts.unit==='km'?'ride'
     :(pts.unit==='points'?'day':(pts.unit==='mmHg'?'reading':'workout')));
   /* weight and level series both plot the hold or reps on their own right-hand axis */
   const dual=!split&&(!pts.unit||isLevel||isPair)&&pts.some(p=>p.reps!=null);
   const repLabel=isPair?(pts.second||''):(pts[0].mode==='secs'?'sec':'reps');
+  /* a machine notch is named, not measured: "level 8", not "8 level" */
+  const amount=v=>unit==='level'?('level '+v):(v+' '+unit);
   const lastIn=pl=>{ for(let i=pts.length-1;i>=0;i--) if(pts[i].place===pl) return pts[i]; return null; };
   const latest=pts[pts.length-1], first=pts[0];
   const delta=Math.round((latest.value-first.value)*100)/100;
   const sat=isMedSeries?pts.filter(p=>!p.none).length:0;
   const head=split
-    ? split.map(pl=>{ const p=lastIn(pl); return p?pl.toLowerCase()+' '+p.value+' '+unit:null; })
+    ? split.map(pl=>{ const p=lastIn(pl); return p?pl.toLowerCase()+' '+amount(p.value):null; })
         .filter(Boolean).join(' · ')
     : isMedSeries
     ? `${sat} of ${pts.length} day${pts.length===1?'':'s'} · latest ${latest.value} points`
@@ -2014,10 +2041,12 @@ function chartBox(name,pts){
     : isLevel
     ? `latest ${esc(latest.levelName)}${latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${
         delta>0?' · ▲ moved up from '+esc(first.levelName):''}`
-    : `latest ${latest.value} ${unit}${dual&&latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${
+    : `latest ${amount(latest.value)}${dual&&latest.reps!=null?' × '+latest.reps+' '+repLabel:''}${
         delta?` · ${delta>0?'▲':'▼'} ${Math.abs(delta)} since first`:''}`;
   box.innerHTML=`<h3>${esc(name)}</h3><div class="vsub">${
-    isMedSeries?head:pts.length+' '+noun+(pts.length>1?'s':'')+' · '+head}</div>`;
+    isMedSeries?head:pts.length+' '+noun+(pts.length>1?'s':'')+' · '+head}${
+    pts.dropped?' · '+pts.dropped+' earlier '+(pts.dropped===1?'session':'sessions')+
+      ' on a different unit, in the log':''}</div>`;
   if(split) box.insertAdjacentHTML('beforeend',
     '<div class="vlegend">'+split.map((pl,i)=>
       `<span><i style="background:var(--chart${i?'2':''})"></i>${esc(pl)}</span>`).join('')+'</div>');
@@ -2174,7 +2203,7 @@ function buildChart(pts,unit,repLabel,levelNames,pair,fixedAxis,split){
     cross.setAttribute('x1',X(best)); cross.setAttribute('x2',X(best)); cross.setAttribute('opacity',1);
     tip.textContent=fmtDate(p.date)+(pair&&p.time?' '+p.time:'')+' · '+
       (split&&p.place?p.place+' · ':'')+
-      (lv?p.levelName:(pair?p.value+'/'+p.low+' '+unit:p.value+' '+unit))+
+      (lv?p.levelName:(pair?p.value+'/'+p.low+' '+unit:(unit==='level'?'level '+p.value:p.value+' '+unit)))+
       (split&&p.reps!=null?' × '+p.reps+(p.mode==='secs'?' s':''):'')+
       (dual&&p.reps!=null?' · '+p.reps+' '+repLabel:'');
     tip.style.left=(X(best)/W*r.width)+'px';
@@ -3349,15 +3378,14 @@ function reportModel(){
       /* home and gym progress apart, so they are tracked apart — one record
          spanning both would read a machine weight as a huge jump */
       const label=x.name+(x.place?' · '+x.place.name:'');
-      const snap={date:e.date, load:fmtLoad(x.load,x.level||x.place), vol:fmtVol(x)};
+      const snap={date:e.date, load:fmtLoad(x.load,x.level||x.place), num:loadNum(x.load), vol:fmtVol(x)};
       const rec=prog.get(label)||{name:label,count:0,first:snap,latest:snap};
       rec.count++; rec.latest=snap; prog.set(label,rec);
       rows.push([e.date, sl, label, fmtLoad(x.load,x.level||x.place), x.sets, x.reps+(x.mode==='secs'?' s':'')]);
     }
   }
-  const raised=[...prog.values()].filter(r=>{
-    const a=parseFloat(r.first.load), b=parseFloat(r.latest.load);
-    return !isNaN(a)&&!isNaN(b)&&b>a; }).length;
+  const raised=[...prog.values()].filter(r=>
+    r.first.num!=null&&r.latest.num!=null&&r.latest.num>r.first.num).length;
   const painDays=others.filter(e=>e.type==='injury').length;
   return {all,workouts,others,from,to,perWeek,prog:[...prog.values()],rows,raised,painDays,
     series:progressSeries()};
@@ -3548,8 +3576,7 @@ function reportHTML(m){
     <tr><th style="width:28%">Exercise</th><th class="num">Load</th><th class="num">Sets × reps</th>
     <th class="num grp">Load</th><th class="num">Sets × reps</th><th class="num">Sessions</th></tr></thead><tbody>`);
   for(const r of m.prog){
-    const a=parseFloat(r.first.load), b=parseFloat(r.latest.load);
-    const up=(!isNaN(a)&&!isNaN(b)&&b>a)?' up':'';
+    const up=(r.first.num!=null&&r.latest.num!=null&&r.latest.num>r.first.num)?' up':'';
     P.push(`<tr><td>${esc(r.name)}</td>
       <td class="num">${esc(r.first.load)}</td><td class="num">${esc(r.first.vol)}</td>
       <td class="num grp${up}">${esc(r.latest.load)}</td><td class="num">${esc(r.latest.vol)}</td>
@@ -3566,7 +3593,7 @@ function reportHTML(m){
       <span class="hint">${chartable.length} exercises</span></div>
       <div class="legend"><span><i></i>Weight · left axis</span><span><i class="dash"></i>Reps · right axis</span></div>`);
     for(const [name,pts] of chartable){
-      const unit=pts.unit||(pts[0].kind==='bandKg'?'kg band':'kg');
+      const unit=pts.unit||(pts[0].kind==='bandKg'?'kg band':(pts[0].kind==='machine'?'level':'kg'));
       const f=pts[0].value, l=pts[pts.length-1].value, d=Math.round((l-f)*100)/100;
       P.push(`<div class="chart"><h3>${esc(name)}</h3>
         <p class="csub">${f} → ${l} ${esc(unit)} (${d>0?'+':''}${d}) · ${pts.length} sessions</p>
@@ -3991,7 +4018,7 @@ function pdfChart(d,name,pts){
   d.room(h+58);
   d.text(name,PT.M,9.5,{bold:true,rgb:PDF_INK}); d.y-=12;
   const top=d.y, bot=d.y-h, padL=PT.M+32, padR=PT.W-PT.M-(pts.some(p=>p.reps!=null)?30:6);
-  const unit=pts.unit||(pts[0].kind==='bandKg'?'kg band':'kg');
+  const unit=pts.unit||(pts[0].kind==='bandKg'?'kg band':(pts[0].kind==='machine'?'level':'kg'));
   const dual=pts.some(p=>p.reps!=null)&&!pts.unit;
   const A=pts.pair?niceAxis(pts.flatMap(p=>[p.value,p.low]),3):niceAxis(pts.map(p=>p.value),3);
   const B=dual?niceAxis(pts.filter(p=>p.reps!=null).map(p=>p.reps),3):null;
