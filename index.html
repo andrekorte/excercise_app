@@ -395,7 +395,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v53';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v54';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -827,6 +827,7 @@ function render(){
     if(parts[0]==='bike') return viewBike(M,parts[1]||null);
     if(parts[0]==='bp') return viewBP(M,parts[1]||null);
     if(parts[0]==='bplog') return viewBPLog(M,parts[1]||null);
+    if(parts[0]==='health') return viewHealth(M);
     if(parts[0]==='meditate') return viewMeditate(M,parts[1]||null);
     if(parts[0]==='medlog') return viewMedLog(M,parts[1]||null);
     if(parts[0]==='coach') return viewCoach(M,parts[1]||null)
@@ -855,10 +856,12 @@ function viewHome(M){
     </div>
     <button class="btn secondary" id="bMed"><span class="chip med">${ico('lotus',15)}</span> Meditation</button>
     <button class="btn secondary" id="bBP"><span class="chip bp">${ico('heart',15)}</span> Blood pressure</button>
+    <button class="btn secondary" id="bHealth"><span class="chip ai">${ico('activity',15)}</span> Health data</button>
     <div class="weekline">${wc===0?'No workouts yet this week':wc+' workout'+(wc>1?'s':'')+' this week'}</div>
     <div id="feed"></div>`;
   $('#bCap').onclick=()=>nav('capture');
   $('#bBP').onclick=()=>nav('bp');
+  $('#bHealth').onclick=()=>nav('health');
   if(justSaved){
     const js=justSaved; justSaved=null;
     quickReady().then(ok=>{
@@ -910,7 +913,7 @@ function viewHome(M){
   if(!S.entries.length){ feed.innerHTML='<p class="empty">Nothing here yet.<br>Capture your first workout above.</p>'; return; }
   for(const e of S.entries){
     /* tracked under Progress, not on the timeline */
-    if(e.type==='meditation'||e.type==='bp') continue;
+    if(e.type==='meditation'||e.type==='bp'||e.type==='health') continue;
     const c=document.createElement('div'); c.className='card tappable';
     let badge,sub;
     if(e.type==='workout'){
@@ -1343,8 +1346,8 @@ const SIMPLE={
     ph:'What was discussed, changes to the plan…'},
   injury:{title:'Injury Break', short:'Injury Break', label:'What happened / how long?',
     ph:'e.g. shoulder flared up, pausing for a week'},
-  run:{title:'Run', short:'Run', label:'Note (optional)',
-    ph:'e.g. easy 5k along the river — details in Runkeeper'},
+  run:{title:'Run', short:'Run', label:'Note (optional)', km:true,
+    ph:'e.g. easy 5k along the river'},
 };
 function viewSimple(M,type,editId){
   setTab('home');
@@ -1357,13 +1360,21 @@ function viewSimple(M,type,editId){
     setBar('Edit '+cfg.short,'entry/'+editId);
   } else {
     entry={id:uid(), type, date:todayStr(), createdAt:Date.now(), comments:''};
+    if(cfg.km) entry.km=null;
     setBar(cfg.title,'home');
   }
   M.innerHTML=`
     <div class="field"><label>Date</label><input type="date" id="fDate" value="${entry.date}"></div>
+    ${cfg.km?'<div class="field"><label>Distance (km, optional)</label><div id="kmCtl"></div></div>':''}
     <div class="field"><label>${esc(cfg.label)}</label>
       <textarea id="fCom" placeholder="${esc(cfg.ph)}">${esc(entry.comments)}</textarea></div>
     <button class="btn" id="bSave">${isEdit?'Save Changes':'Save'}</button>`;
+  if(cfg.km){
+    const kc=stepCtl('',entry.km==null?null:entry.km,1,v=>{ entry.km=v;
+      kc.querySelector('.stepper').classList.toggle('blankhl',v==null); },{blankable:true});
+    kc.querySelector('label').remove();
+    $('#kmCtl').appendChild(kc);
+  }
   const doSave=async()=>{
     entry.date=$('#fDate').value||todayStr();
     entry.comments=$('#fCom').value.trim();
@@ -1959,6 +1970,23 @@ function progressSeries(){
       a.push({date:iso, value:byDay.get(iso)||0, none:!byDay.has(iso)});
     }
     map.set('Meditation (points)',a);
+  }
+  /* marked personal: his own business, kept out of the physio's charts the
+     way meditation is */
+  for(const m of Object.values(HEALTH_METRICS)){
+    const got=[...S.entries].filter(e=>e.type==='health'&&e[m.key]!=null)
+      .sort((a,b)=>a.date.localeCompare(b.date));
+    if(!got.length) continue;
+    const a=[]; a.unit=m.unit; a.personal=true;
+    got.forEach(e=>a.push({date:e.date, value:e[m.key]}));
+    map.set(m.name,a);
+  }
+  const runs=[...S.entries].filter(e=>e.type==='run'&&e.km!=null)
+    .sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
+  if(runs.length){
+    const a=[]; a.unit='km';
+    runs.forEach(e=>a.push({date:e.date, value:e.km}));
+    map.set('Running (km)',a);
   }
   const rides=[...S.entries].filter(e=>e.type==='bike'&&e.km!=null)
     .sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
@@ -2612,6 +2640,16 @@ function coachData(){
     L.push('');L.push('6. THE WEEKLY PLAN HE SET HIMSELF');
     L.push(S.plan.map((v,i)=>DAYS[i]+': '+(v?'Session '+v:'rest')).join('\n'));
   }
+  /* sleep, resting heart rate, HRV and weight out of Apple Health — his own
+     readings, kept out of the physio's report but worth the coach knowing */
+  const hd=S.entries.filter(e=>e.type==='health').sort((a,b)=>a.date.localeCompare(b.date)).slice(-60);
+  if(hd.length){
+    const cols=Object.values(HEALTH_METRICS);
+    L.push('');L.push('7. SLEEP, RECOVERY AND WEIGHT (from Apple Health and Whoop; '+
+      'not part of the physio programme, and not every day is filled in)');
+    L.push(['Date',...cols.map(m=>m.name+' ('+m.unit+')')].join('\t'));
+    for(const e of hd) L.push([e.date,...cols.map(m=>e[m.key]==null?'—':e[m.key])].join('\t'));
+  }
   return L.join('\n');
 }
 
@@ -3105,6 +3143,89 @@ let coachCleanup=null;
 /* ================= blood pressure =================
    Kept off the timeline - it is not training - but it trends in Progress, goes
    into the physio report and the coach can see it. */
+/* ================= health data from Apple Health =================
+   iOS gives a web app no way into HealthKit, so the data comes the long way
+   round: a Shortcut reads it and writes a file, and this reads the file.
+   Whoop and Runkeeper both write into Health, so one file covers all three.
+   Deliberately forgiving about shape — a Shortcut is a fiddly thing to build. */
+const HEALTH_METRICS={
+  sleep:     {key:'sleep',     name:'Sleep',                  unit:'h',   dp:1},
+  restingHR: {key:'restingHR', name:'Resting heart rate',     unit:'bpm', dp:0},
+  hrv:       {key:'hrv',       name:'Heart rate variability', unit:'ms',  dp:0},
+  weight:    {key:'weight',    name:'Body weight',            unit:'kg',  dp:1},
+};
+/* the many names a Shortcut might give the same thing */
+const HEALTH_ALIASES={
+  sleep:'sleep', sleephours:'sleep', sleepanalysis:'sleep', asleep:'sleep', timeasleep:'sleep',
+  restinghr:'restingHR', restingheartrate:'restingHR', resting_heart_rate:'restingHR', rhr:'restingHR',
+  hrv:'hrv', heartratevariability:'hrv', heartratevariabilitysdnn:'hrv', sdnn:'hrv',
+  weight:'weight', bodyweight:'weight', bodymass:'weight',
+  run:'run', running:'run', ride:'bike', bike:'bike', cycling:'bike',
+};
+const healthAlias=k=>HEALTH_ALIASES[String(k||'').toLowerCase().replace(/[\s()\-]/g,'')]||null;
+const healthId=date=>'h_'+date;
+const ISO_DATE=/^\d{4}-\d{2}-\d{2}$/;
+
+/* text in, {days, workouts} out — CSV lines or JSON, whichever the Shortcut made */
+function parseHealthImport(text){
+  const days=new Map(), workouts=[];
+  const take=(date,metric,value)=>{
+    if(!ISO_DATE.test(date)) return;
+    const k=healthAlias(metric); if(!k) return;
+    const v=parseFloat(value); if(isNaN(v)) return;
+    if(k==='run'||k==='bike'){ workouts.push({date, kind:k, km:Math.round(v*100)/100}); return; }
+    if(!days.has(date)) days.set(date,{});
+    days.get(date)[k]=Math.round(v*Math.pow(10,HEALTH_METRICS[k].dp))/Math.pow(10,HEALTH_METRICS[k].dp);
+  };
+  let data=null;
+  try{ data=JSON.parse(text); }catch(e){}
+  if(Array.isArray(data)){
+    for(const r of data){
+      if(!r||typeof r!=='object') continue;
+      if(r.metric!==undefined) take(r.date,r.metric,r.value);
+      else for(const k of Object.keys(r)) if(k!=='date') take(r.date,k,r[k]);
+    }
+  } else if(data&&typeof data==='object'){
+    for(const d of (data.days||[])) for(const k of Object.keys(d)) if(k!=='date') take(d.date,k,d[k]);
+    for(const w of (data.workouts||[])) take(w.date, w.type||w.kind, w.km!=null?w.km:w.distance);
+  } else {
+    /* plain lines: date,metric,value — what a Shortcut makes most easily */
+    for(const line of String(text).split(/[\r\n]+/)){
+      const c=line.split(',').map(x=>x.trim());
+      if(c.length>=3) take(c[0],c[1],c[2]);
+    }
+  }
+  return {days, workouts};
+}
+
+/* fold a parsed file into the data, updating rather than piling up duplicates */
+async function applyHealthImport(parsed){
+  let added=0, updated=0, runs=0;
+  for(const [date,vals] of parsed.days){
+    if(!Object.keys(vals).length) continue;
+    const id=healthId(date);
+    const prev=S.entries.find(e=>e.id===id);
+    const e=prev?JSON.parse(JSON.stringify(prev))
+      :{id, type:'health', date, createdAt:Date.now(), source:'Apple Health'};
+    let touched=false;
+    for(const k of Object.keys(vals)) if(e[k]!==vals[k]){ e[k]=vals[k]; touched=true; }
+    if(!touched) continue;
+    await saveEntry(e); prev?updated++:added++;
+  }
+  for(const w of parsed.workouts){
+    /* a run already logged by hand that day is filled in, not duplicated */
+    const same=S.entries.find(e=>e.type===w.kind&&e.date===w.date);
+    if(same){
+      if(same.km==null){ const c=JSON.parse(JSON.stringify(same)); c.km=w.km; await saveEntry(c); runs++; }
+      continue;
+    }
+    await saveEntry({id:uid(), type:w.kind, date:w.date, createdAt:Date.now(),
+      km:w.km, comments:'', source:'Apple Health'});
+    runs++;
+  }
+  return {added,updated,runs};
+}
+
 const BP_TAGS=[['','Neither'],['pre','Before workout'],['post','After workout']];
 const bpTagName=t=>(BP_TAGS.find(x=>x[0]===(t||''))||BP_TAGS[0])[1];
 const nowTime=()=>{ const d=new Date();
@@ -3257,6 +3378,67 @@ function viewBP(M,editId){
 }
 
 /* the readings themselves, since they are not on the timeline */
+/* Sleep, resting heart rate, HRV and weight, brought in from Apple Health */
+function viewHealth(M){
+  setBar('Health data','home'); setTab('home');
+  const days=S.entries.filter(e=>e.type==='health').sort((a,b)=>b.date.localeCompare(a.date));
+  const latest={};
+  for(const k of Object.keys(HEALTH_METRICS))
+    latest[k]=days.find(d=>d[k]!=null)||null;
+
+  const card=document.createElement('div'); card.className='card';
+  card.innerHTML='<div class="cardsub" style="color:var(--ink)">'+
+    (days.length?'<b>'+days.length+' day'+(days.length===1?'':'s')+'</b> imported · latest '+
+      esc(fmtFull(days[0].date)):'Nothing imported yet')+'</div>';
+  M.appendChild(card);
+
+  if(days.length){
+    const t=document.createElement('div'); t.className='card';
+    t.innerHTML='<table class="dtl">'+Object.values(HEALTH_METRICS).map(m=>{
+      const d=latest[m.key];
+      return `<tr><td>${esc(m.name)}</td><td class="num">${d
+        ? esc(d[m.key].toFixed(m.dp)+' '+m.unit)+' <span style="color:var(--muted)">· '+esc(fmtDate(d.date))+'</span>'
+        : '<span style="color:var(--muted)">—</span>'}</td></tr>`;
+    }).join('')+'</table>';
+    M.appendChild(t);
+    const row=document.createElement('div'); row.className='btnrow';
+    for(const m of Object.values(HEALTH_METRICS)){
+      if(!latest[m.key]) continue;
+      const b=document.createElement('button'); b.className='btn secondary small';
+      b.textContent=m.name; b.onclick=()=>nav('progress/'+encodeURIComponent(m.name));
+      row.appendChild(b);
+    }
+    row.style.flexWrap='wrap'; M.appendChild(row);
+  }
+
+  const imp=document.createElement('div');
+  imp.innerHTML=`<div class="sectionlabel">Import</div>
+    <button class="btn" id="bHImp">Import from Apple Health</button>
+    <input type="file" id="fHImp" accept=".csv,.json,.txt,text/csv,application/json,text/plain" class="hidden">
+    <p class="cue" style="margin:8px 2px 24px">Pick the file your Health shortcut saved. Importing the same
+      day twice updates it rather than doubling it up, so running the shortcut often is harmless.
+      Whoop and Runkeeper both write into Apple Health, so they come along too.</p>`;
+  M.appendChild(imp);
+  $('#bHImp').onclick=()=>$('#fHImp').click();
+  $('#fHImp').onchange=async ev=>{
+    const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
+    let parsed;
+    try{ parsed=parseHealthImport(await f.text()); }
+    catch(err){ alert('Could not read that file.'); return; }
+    if(!parsed.days.size&&!parsed.workouts.length){
+      alert('Nothing recognisable in that file.\n\nEach line should read date,metric,value — '+
+        'for example 2026-11-01,restingHR,52'); return;
+    }
+    const r=await applyHealthImport(parsed);
+    const bits=[];
+    if(r.added) bits.push(r.added+' day'+(r.added===1?'':'s')+' added');
+    if(r.updated) bits.push(r.updated+' updated');
+    if(r.runs) bits.push(r.runs+' workout'+(r.runs===1?'':'s'));
+    toast(bits.length?bits.join(' · '):'Already up to date');
+    rerender();
+  };
+}
+
 function viewBPLog(M,date){
   setTab('home');
   setBar(date?'Blood pressure · '+fmtDate(date):'Blood pressure','home');
@@ -3607,7 +3789,7 @@ function reportHTML(m){
   /* meditation is his own business, not the physio's — it has been kept out of
      the log and the tables all along, and must stay out of the charts too */
   const chartable=[...m.series.entries()]
-    .filter(([n,pts])=>pts.length>1&&pts.unit!=='points');
+    .filter(([n,pts])=>pts.length>1&&pts.unit!=='points'&&!pts.personal);
   if(chartable.length){
     P.push(`<section><div class="shead"><span class="snum">05</span><h2>Progress charts</h2>
       <span class="hint">${chartable.length} exercises</span></div>
@@ -4122,7 +4304,8 @@ function reportPDF(m){
       bps.map(e=>[fmtDate(e.date),e.time||'',e.sys,e.dia,e.pulse==null?'—':e.pulse,bpTagName(e.tag)]));
   }
 
-  const charts=[...m.series.entries()].filter(([nm,pts])=>pts.length>1&&pts.unit!=='points');
+  const charts=[...m.series.entries()]
+    .filter(([nm,pts])=>pts.length>1&&pts.unit!=='points'&&!pts.personal);
   if(charts.length){
     pdfHeading(d,n++,'Progress charts');
     for(const [nm,pts] of charts) pdfChart(d,nm,pts);
