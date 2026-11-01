@@ -395,7 +395,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v54';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v55';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -486,6 +486,10 @@ async function loadState(){
       e.level=0;
     } });
   S.templates=t;
+  /* the top-level load mirrors the place the exercise sits at; anything that
+     ever knocked the two out of step is put right here rather than showing one
+     place's name over another's weight */
+  for(const k of Object.keys(t)) if(t[k]) t[k].exercises.forEach(e=>{ if(hasPlaces(e)) mirrorPlace(e); });
   applySessionTints();
   S.plan=(await kvGet('weekPlan'))||[null,null,null,null,null,null,null];
   await seedHistory();
@@ -565,7 +569,7 @@ async function syncDefaults(rows){
         if(P.sets!==planned){ P.sets=planned; changed=true; }
         if(P.reps!==r.reps){ P.reps=r.reps; changed=true; }
         if(te.place!==r.place.i){ te.place=r.place.i; changed=true; }
-        if(changed) mirrorPlace(te);
+        mirrorPlace(te);
         continue;
       }
       if(JSON.stringify(te.load)!==JSON.stringify(r.load)){ te.load=JSON.parse(JSON.stringify(r.load)); changed=true; }
@@ -665,9 +669,12 @@ function templateExercise(name){
   }
   return null;
 }
-/* the levels defined for an exercise, looked up by name across the sessions */
-function levelsFor(name){
-  for(const k of allSessionKeys()){
+/* The levels defined for an exercise. The session it was captured under comes
+   first: the same name can sit in two sessions with numbers of its own, and
+   answering from whichever session sorts first hands the row another one's. */
+function levelsFor(name,preferKey){
+  const keys=preferKey?[preferKey,...allSessionKeys().filter(k=>k!==preferKey)]:allSessionKeys();
+  for(const k of keys){
     const te=S.templates&&S.templates[k]&&S.templates[k].exercises.find(x=>x.name===name);
     if(te&&te.levels) return te.levels;
   }
@@ -685,8 +692,9 @@ const tmplLevel=e=>e.levels?{i:e.level||0,name:e.levels[e.level||0].name}:null;
 const PLACES=['Home','Gym'];
 const hasPlaces=e=>!!e&&Array.isArray(e.places)&&e.places.length>1;
 const tmplPlace=e=>hasPlaces(e)?{i:e.place||0,name:e.places[e.place||0].name}:null;
-function placesFor(name){
-  for(const k of allSessionKeys()){
+function placesFor(name,preferKey){
+  const keys=preferKey?[preferKey,...allSessionKeys().filter(k=>k!==preferKey)]:allSessionKeys();
+  for(const k of keys){
     const te=S.templates&&S.templates[k]&&S.templates[k].exercises.find(x=>x.name===name);
     if(te&&hasPlaces(te)) return te.places;
   }
@@ -1058,9 +1066,9 @@ function viewCapture(M,sessionKey,editId){
         if(dx.load!==undefined&&r.load) r.load.value=dx.load;
         if(dx.sets!=null) r.sets=dx.sets;
         if(dx.reps!=null) r.reps=dx.reps;
-        if(dx.level!=null&&r.level){ const lv=levelsFor(r.name);
+        if(dx.level!=null&&r.level){ const lv=levelsFor(r.name,sessionKey);
           if(lv&&lv[dx.level]) r.level={i:dx.level,name:lv[dx.level].name}; }
-        if(dx.place!=null&&r.place){ const pp=placesFor(r.name);
+        if(dx.place!=null&&r.place){ const pp=placesFor(r.name,sessionKey);
           if(pp&&pp[dx.place]) r.place={i:dx.place,name:pp[dx.place].name}; }
         r.skipped=!!dx.skipped;
       }
@@ -1172,7 +1180,7 @@ function viewCapture(M,sessionKey,editId){
     const setsCtl=stepCtl('Sets', x.sets, 1, v=>{ x.sets=v; renderMarks();
       if(row.classList.contains('done')&&sets<target()) setDone(false,false); saveDraftNow(); });
     const repsCtl=stepCtl(x.mode==='secs'?'Hold (s)':'Reps', x.reps, 1, v=>{ x.reps=v; saveDraftNow(); });
-    const lv=x.level?levelsFor(x.name):null;
+    const lv=x.level?levelsFor(x.name,sessionKey):null;
     if(lv){
       const c=document.createElement('div'); c.className='ctl wide';
       c.innerHTML='<label>Level</label><div class="levelseg">'+
@@ -1195,7 +1203,7 @@ function viewCapture(M,sessionKey,editId){
       ctls.appendChild(c);
     }
     /* levels and places are mutually exclusive, so at most one of these shows */
-    const pl=x.place?placesFor(x.name):null;
+    const pl=x.place?placesFor(x.name,sessionKey):null;
     if(pl){
       const c=document.createElement('div'); c.className='ctl wide';
       c.innerHTML='<label>Where</label><div class="levelseg">'+

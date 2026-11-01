@@ -188,6 +188,47 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
     !!S.templates.C.exercises.find((x) => /dead ?bug/i.test(x.name)).levels));
   t.check('and is not offered places as well', (await page.locator('#fPlaces').count()) === 0);
 
+  // ---------- the same exercise in two sessions keeps two sets of numbers ----------
+  // the bug this guards: the toggle used to look the places up by name across
+  // every session, so tapping Gym in one session handed you another one's weight
+  await page.evaluate(async () => {
+    try { localStorage.clear(); } catch (err) {}
+    const mk = (home, gym) => ({ id: uid(), name: 'Triceps', cue: '',
+      load: { kind: 'kg', value: gym }, sets: 3, reps: 12, mode: 'reps', youtube: '', videoId: null,
+      places: [{ name: 'Home', load: { kind: 'kg', value: home }, sets: 3, reps: 12 },
+               { name: 'Gym', load: { kind: 'kg', value: gym }, sets: 3, reps: 12 }], place: 1 });
+    S.templates.A.exercises.push(mk(30, 100));
+    S.templates.B.exercises.push(mk(30, 80));
+    await saveTemplates(); await loadState();
+  });
+
+  const tri = (p) => p.locator('.exrow').filter({ hasText: 'Triceps' });
+  const weight = (p) => tri(p).locator('.stepper input').first().inputValue();
+  const tap = async (p, i) => { await tri(p).locator('.lvbtn.place').nth(i).click(); await p.waitForTimeout(250); };
+
+  await go(page, 'capture/B');
+  await page.waitForTimeout(400);
+  t.check('B opens at its own gym weight', (await weight(page)) === '80');
+  await tap(page, 0);
+  t.check('and its own home weight', (await weight(page)) === '30');
+  await tap(page, 1);
+  t.check('tapping back to Gym gives B its 80, not A\'s 100', (await weight(page)) === '80');
+
+  await go(page, 'capture/A');
+  await page.waitForTimeout(400);
+  await tap(page, 0);
+  await tap(page, 1);
+  t.check('and A still has its own 100', (await weight(page)) === '100');
+
+  // ---------- the mirror is put back in step on the way in ----------
+  await page.evaluate(async () => {
+    const te = S.templates.B.exercises.find((x) => x.name === 'Triceps');
+    te.load = { kind: 'kg', value: 999 };        // knocked out of step by hand
+    await saveTemplates(); await loadState();
+  });
+  t.check('a drifted mirror is corrected against its place', (await page.evaluate(() =>
+    S.templates.B.exercises.find((x) => x.name === 'Triceps').load.value)) === 80);
+
   await browser.close();
   t.end(errs);
 })();
