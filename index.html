@@ -18,6 +18,7 @@
   --page:#f5f5f3; --surface:#ffffff; --ink:#1c1c1a; --ink-2:#52514e; --muted:#8a887f;
   --grid:#e7e6e0; --baseline:#c3c2b7; --ring:rgba(28,28,26,.09);
   --accent:#2a78d6; --chart:#2a78d6; --chart2:#eb6834; --danger:#b3372f;
+  --chart3:#0d7a52; --chart4:#8a2f8a;
   --tint-a-bg:#e8f0fb; --tint-a-ink:#1c5cab;
   --tint-b-bg:#fcebe2; --tint-b-ink:#b4441c;
   --tint-c-bg:#e2f4ec; --tint-c-ink:#0d7a52;
@@ -121,11 +122,14 @@ main{padding:16px; max-width:560px; margin:0 auto}
 .exrow .exname{font-weight:650; flex:1}
 .cue{color:var(--muted); font-size:13px; margin-top:2px}
 .controls{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
-.ctl{flex:1; min-width:104px}
+.ctl{flex:1; min-width:96px}
+/* the load carries the longest value — 162.5 kg — so it gets the wider share */
+.ctl.load{flex:1.6 1 124px}
 .ctl label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600}
 .stepper{display:flex; align-items:stretch; border-radius:10px; box-shadow:inset 0 0 0 1px var(--ring); overflow:hidden; background:var(--page)}
-.stepper button{border:0; background:none; color:var(--accent); font-size:18px; width:27px; cursor:pointer; font-weight:700; flex:none; padding:0}
-.stepper input{border:0; background:none; color:var(--ink); flex:1; width:100%; min-width:44px; text-align:center; font-size:16px; font-weight:650; padding:9px 0; font-variant-numeric:tabular-nums; font-family:inherit}
+.stepper button{border:0; background:none; color:var(--accent); font-size:18px; width:24px; cursor:pointer; font-weight:700; flex:none; padding:0}
+/* three controls on one phone row, and a machine weight can run to 162.5 */
+.stepper input{border:0; background:none; color:var(--ink); flex:1; width:100%; min-width:0; text-align:center; font-size:15px; font-weight:650; padding:9px 0; font-variant-numeric:tabular-nums; font-family:inherit}
 .stepper input:focus{outline:none}
 input[type=text],input[type=date],input[type=url],textarea,select{
   width:100%; border:0; border-radius:10px; box-shadow:inset 0 0 0 1px var(--ring);
@@ -395,7 +399,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v55';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v56';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -430,7 +434,7 @@ const videoDel=id=>tx('videos','readwrite',s=>s.delete(id));
 
 /* ================= state & seed ================= */
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-let S={templates:null, entries:[]};
+let S={templates:null, library:null, entries:[]};
 
 function seedTemplates(){
   const ex=(name,cue,kind,value,sets,reps,mode,youtube)=>({id:uid(),name,cue:cue||'',load:{kind,value},sets,reps,mode:mode||'reps',youtube:youtube||'',videoId:null});
@@ -475,22 +479,93 @@ function applySessionTints(){
   }).join('\n');
 }
 
+/* ================= the exercise library =================
+   An exercise is its own thing. A session is a list of which ones it uses, so
+   the same exercise can sit in several sessions, or in none, and still be
+   there to log. Two copies of one name with numbers of their own are gone:
+   there is one Triceps, and it is the same Triceps everywhere. */
+const libEx=id=>S.library?S.library[id]:null;
+const libAll=()=>Object.values(S.library||{}).sort((a,b)=>a.name.localeCompare(b.name));
+const libFind=name=>libAll().find(e=>e.name===name)||null;
+const sessionsWith=id=>allSessionKeys().filter(k=>(S.templates[k].items||[]).includes(id));
+const orphanEx=()=>libAll().filter(e=>sessionsWith(e.id).length===0);
+/* each session's exercises, as objects, rebuilt from the library after any change */
+function relinkTemplates(){
+  for(const k of Object.keys(S.templates||{})){
+    const t=S.templates[k];
+    if(!Array.isArray(t.items)) t.items=[];
+    t.exercises=t.items.map(libEx).filter(Boolean);
+  }
+}
+
+/* One exercise per name, carrying whatever was last lifted. */
+async function migrateLibrary(t,entries){
+  const existing=await kvGet('library');
+  if(existing){ S.library=existing; return; }
+  const lib={}, merged=new Set();
+  const pick=(a,b,f)=>{ if(!a[f]&&b[f]) a[f]=b[f]; };
+  for(const k of Object.keys(t)){
+    const tt=t[k]; tt.items=[];
+    for(const e of tt.exercises||[]){
+      const dup=Object.values(lib).find(x=>x.name===e.name);
+      if(!dup){ lib[e.id]=e; tt.items.push(e.id); continue; }
+      /* the same name twice: one exercise from here on */
+      merged.add(dup.name);
+      pick(dup,e,'cue'); pick(dup,e,'youtube'); pick(dup,e,'videoId');
+      if(!dup.levels&&e.levels){ dup.levels=e.levels; dup.level=e.level||0; }
+      if(!hasPlaces(dup)&&hasPlaces(e)){ dup.places=e.places; dup.place=e.place||0; }
+      tt.items.push(dup.id);
+    }
+    delete tt.exercises;
+  }
+  /* "keep the most recent weights": for a name that was in two sessions, the
+     numbers come from the newest workout rather than from whichever session
+     happened to be read first */
+  const byDate=[...entries].filter(e=>e.type==='workout')
+    .sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);
+  for(const ex of Object.values(lib)){
+    if(!merged.has(ex.name)) continue;
+    const rows=[];
+    for(const en of byDate) for(const x of en.exercises||[])
+      if(x.name===ex.name&&!x.skipped) rows.push(x);
+    if(!rows.length) continue;
+    const setOf=(target,row)=>{ target.load=JSON.parse(JSON.stringify(row.load));
+      target.sets=(row.plan&&row.plan>row.sets)?row.plan:row.sets; target.reps=row.reps; };
+    if(hasPlaces(ex)){
+      for(const p of ex.places){
+        const r=rows.find(x=>x.place&&x.place.name===p.name);
+        if(r) setOf(p,r);
+      }
+      mirrorPlace(ex);
+    } else setOf(ex,rows[0]);
+  }
+  S.library=lib;
+  await kvSet('library',lib);
+  await kvSet('templates',t);
+}
+
 async function loadState(){
   let t=await kvGet('templates');
   if(!t){ t=seedTemplates(); await kvSet('templates',t); }
+  S.templates=t;
+  const allEntries=await entryAll();
+  await migrateLibrary(t,allEntries);
+  relinkTemplates();
   // migration guard: ensure fields exist
-  for(const k of Object.keys(t)) if(t[k]) t[k].exercises.forEach(e=>{ if(!e.mode)e.mode='reps'; if(!('videoId'in e))e.videoId=null;
+  for(const e of libAll()){ if(!e.mode)e.mode='reps'; if(!('videoId'in e))e.videoId=null;
     const sp=hasPlaces(e)?null:levelSpec(e.name);
     if(sp&&!e.levels){
       e.levels=sp.names.map(name=>({name,sets:e.sets,reps:e.reps}));
       e.level=0;
-    } });
-  S.templates=t;
+    } }
   /* the top-level load mirrors the place the exercise sits at; anything that
      ever knocked the two out of step is put right here rather than showing one
      place's name over another's weight */
-  for(const k of Object.keys(t)) if(t[k]) t[k].exercises.forEach(e=>{ if(hasPlaces(e)) mirrorPlace(e); });
+  for(const e of libAll()) if(hasPlaces(e)) mirrorPlace(e);
   applySessionTints();
+  S.places=(await kvGet('places'))||null;
+  if(!S.places){ S.places=PLACES_DEFAULT.slice(); await savePlaces(); }
+  await migratePlaces(t);
   S.plan=(await kvGet('weekPlan'))||[null,null,null,null,null,null,null];
   await seedHistory();
   S.entries=(await entryAll()).sort((a,b)=> (b.date.localeCompare(a.date)) || (b.createdAt-a.createdAt));
@@ -550,7 +625,20 @@ async function seedHistory(){
   }
   await kvSet('seedHistoryV1',true);
 }
-const saveTemplates=()=>{ applySessionTints(); return kvSet('templates',S.templates); };
+/* `exercises` on a session is a live view of the library, so it is rebuilt on
+   the way in and never written out */
+async function saveTemplates(){
+  applySessionTints();
+  const clean={};
+  for(const k of Object.keys(S.templates)){
+    const t=S.templates[k];
+    clean[k]={key:t.key, name:t.name, items:(t.items||[]).slice()};
+    if(t.archived) clean[k].archived=true;
+  }
+  await kvSet('library',S.library);
+  await kvSet('templates',clean);
+  relinkTemplates();
+}
 /* what was actually done becomes the default for next time */
 async function syncDefaults(rows){
   let changed=false;
@@ -558,8 +646,8 @@ async function syncDefaults(rows){
     if(r.skipped) continue;
     /* stopping after one of three sets must not make one set the plan */
     const planned=(r.plan&&r.plan>r.sets)?r.plan:r.sets;
-    for(const k of allSessionKeys()){
-      const te=S.templates[k]&&S.templates[k].exercises.find(x=>x.name===r.name);
+    {
+      const te=libFind(r.name);
       if(!te) continue;
       /* a placed exercise files everything under the place it was done at, so
          a heavy machine set never overwrites what he lifts at home */
@@ -661,25 +749,10 @@ const LEVELLED=[
 ];
 /* the ladder an exercise is on, if it is on one */
 const levelSpec=name=>LEVELLED.find(l=>l.re.test(String(name||'').trim()))||null;
-/* the template an exercise came from, wherever in the programme it lives */
-function templateExercise(name){
-  for(const k of sessionKeys()){
-    const e=S.templates[k]&&S.templates[k].exercises.find(x=>x.name===name);
-    if(e) return e;
-  }
-  return null;
-}
-/* The levels defined for an exercise. The session it was captured under comes
-   first: the same name can sit in two sessions with numbers of its own, and
-   answering from whichever session sorts first hands the row another one's. */
-function levelsFor(name,preferKey){
-  const keys=preferKey?[preferKey,...allSessionKeys().filter(k=>k!==preferKey)]:allSessionKeys();
-  for(const k of keys){
-    const te=S.templates&&S.templates[k]&&S.templates[k].exercises.find(x=>x.name===name);
-    if(te&&te.levels) return te.levels;
-  }
-  return null;
-}
+/* the exercise itself, wherever in the programme it is used */
+const templateExercise=name=>libFind(name);
+/* One exercise per name, so these are a straight library lookup */
+function levelsFor(name){ const e=libFind(name); return e&&e.levels?e.levels:null; }
 /* the level a template exercise currently sits at, for display */
 const tmplLevel=e=>e.levels?{i:e.level||0,name:e.levels[e.level||0].name}:null;
 
@@ -689,17 +762,17 @@ const tmplLevel=e=>e.levels?{i:e.level||0,name:e.levels[e.level||0].name}:null;
    place, the way a levelled one keeps sets and reps per level, and the top
    level load/sets/reps mirror whichever place it currently sits at so every
    other reader of a template carries on working. */
-const PLACES=['Home','Gym'];
+/* The places he trains. Editable, like the sessions: a name is the identity,
+   the position decides the badge colour and the order of the buttons. */
+const PLACES_DEFAULT=['Home','City','Dolphins'];
+const places=()=>Array.isArray(S.places)&&S.places.length?S.places:PLACES_DEFAULT;
+const placeIndex=name=>places().indexOf(name);
+const savePlaces=()=>kvSet('places',S.places);
+const CHART_COLOURS=['var(--chart)','var(--chart2)','var(--chart3)','var(--chart4)'];
+const placeColour=name=>{ const i=placeIndex(name); return CHART_COLOURS[(i<0?0:i)%CHART_COLOURS.length]; };
 const hasPlaces=e=>!!e&&Array.isArray(e.places)&&e.places.length>1;
 const tmplPlace=e=>hasPlaces(e)?{i:e.place||0,name:e.places[e.place||0].name}:null;
-function placesFor(name,preferKey){
-  const keys=preferKey?[preferKey,...allSessionKeys().filter(k=>k!==preferKey)]:allSessionKeys();
-  for(const k of keys){
-    const te=S.templates&&S.templates[k]&&S.templates[k].exercises.find(x=>x.name===name);
-    if(te&&hasPlaces(te)) return te.places;
-  }
-  return null;
-}
+function placesFor(name){ const e=libFind(name); return hasPlaces(e)?e.places:null; }
 /* the active place's numbers are the exercise's numbers */
 function mirrorPlace(te){
   if(!hasPlaces(te)) return;
@@ -845,6 +918,7 @@ function render(){
     if(parts[0]==='settings') return viewSettings(M);
     if(parts[0]==='report') return viewReport(M);
     if(parts[0]==='session') return viewSession(M,parts[1]);
+    if(parts[0]==='place') return viewPlace(M,parts[1]);
     if(parts[0]==='exercise') return viewExercise(M,parts[1],parts[2]);
     if(parts[0]==='progress') return viewProgress(M,parts.slice(1).join('/'));
     viewHome(M);
@@ -1066,9 +1140,9 @@ function viewCapture(M,sessionKey,editId){
         if(dx.load!==undefined&&r.load) r.load.value=dx.load;
         if(dx.sets!=null) r.sets=dx.sets;
         if(dx.reps!=null) r.reps=dx.reps;
-        if(dx.level!=null&&r.level){ const lv=levelsFor(r.name,sessionKey);
+        if(dx.level!=null&&r.level){ const lv=levelsFor(r.name);
           if(lv&&lv[dx.level]) r.level={i:dx.level,name:lv[dx.level].name}; }
-        if(dx.place!=null&&r.place){ const pp=placesFor(r.name,sessionKey);
+        if(dx.place!=null&&r.place){ const pp=placesFor(r.name);
           if(pp&&pp[dx.place]) r.place={i:dx.place,name:pp[dx.place].name}; }
         r.skipped=!!dx.skipped;
       }
@@ -1171,6 +1245,7 @@ function viewCapture(M,sessionKey,editId){
     if(isNumLoad(x.load)){
       loadCtl=stepCtl(loadCaption(x.load.kind), x.load.value, loadStep(x.load.kind),
         v=>{ x.load.value=v; saveDraftNow(); });
+      loadCtl.classList.add('load');
       ctls.appendChild(loadCtl);
     } else if(x.load.kind==='bandColor'){
       const c=document.createElement('div'); c.className='ctl';
@@ -1180,7 +1255,7 @@ function viewCapture(M,sessionKey,editId){
     const setsCtl=stepCtl('Sets', x.sets, 1, v=>{ x.sets=v; renderMarks();
       if(row.classList.contains('done')&&sets<target()) setDone(false,false); saveDraftNow(); });
     const repsCtl=stepCtl(x.mode==='secs'?'Hold (s)':'Reps', x.reps, 1, v=>{ x.reps=v; saveDraftNow(); });
-    const lv=x.level?levelsFor(x.name,sessionKey):null;
+    const lv=x.level?levelsFor(x.name):null;
     if(lv){
       const c=document.createElement('div'); c.className='ctl wide';
       c.innerHTML='<label>Level</label><div class="levelseg">'+
@@ -1203,10 +1278,10 @@ function viewCapture(M,sessionKey,editId){
       ctls.appendChild(c);
     }
     /* levels and places are mutually exclusive, so at most one of these shows */
-    const pl=x.place?placesFor(x.name,sessionKey):null;
+    const pl=x.place?placesFor(x.name):null;
     if(pl){
       const c=document.createElement('div'); c.className='ctl wide';
-      c.innerHTML='<label>Where</label><div class="levelseg">'+
+      c.innerHTML='<label>Where</label><div class="levelseg'+(pl.length>2?' tight':'')+'">'+
         pl.map((o,i)=>`<button type="button" class="lvbtn place${i===x.place.i?' on':''}">${esc(o.name)}</button>`).join('')+
         '</div>';
       c.querySelectorAll('.lvbtn').forEach((btn,i)=>{
@@ -1250,9 +1325,11 @@ function viewCapture(M,sessionKey,editId){
   });
 
   $('#bAddEx').onclick=()=>{
-    const present=new Set(entry.exercises.map(x=>x.name)), seen=new Set(), opts=[];
-    for(const k of sessionKeys()) for(const e of S.templates[k].exercises)
-      if(!present.has(e.name)&&!seen.has(e.name)){ seen.add(e.name); opts.push({k,e}); }
+    const present=new Set(entry.exercises.map(x=>x.name)), opts=[];
+    for(const e of libAll()) if(!present.has(e.name)){
+      const where=sessionsWith(e.id);
+      opts.push({k:where.length?where.join('+'):'—', e});
+    }
     if(!opts.length){ alert('All exercises are already in this workout.'); return; }
     const box=$('#addSel'); box.classList.remove('hidden');
     box.innerHTML='<select id="fAddEx"><option value="">Choose exercise…</option>'+
@@ -1590,8 +1667,9 @@ function viewSettings(M){
         <button class="iconbtn up" ${i===0?'disabled':''}>${ico('chevU',16)}</button>
         <button class="iconbtn down" ${i===t.exercises.length-1?'disabled':''}>${ico('chevD',16)}</button>
         <button class="iconbtn edit">${ico('pencil',15)}</button>`;
-      row.querySelector('.up').onclick=async()=>{ t.exercises.splice(i-1,0,t.exercises.splice(i,1)[0]); await saveTemplates(); rerender(); };
-      row.querySelector('.down').onclick=async()=>{ t.exercises.splice(i+1,0,t.exercises.splice(i,1)[0]); await saveTemplates(); rerender(); };
+      const moveTo=async j=>{ t.items.splice(j,0,t.items.splice(i,1)[0]); await saveTemplates(); rerender(); };
+      row.querySelector('.up').onclick=()=>moveTo(i-1);
+      row.querySelector('.down').onclick=()=>moveTo(i+1);
       row.querySelector('.edit').onclick=()=>nav('exercise/'+k+'/'+ex.id);
       card.appendChild(row);
     });
@@ -1620,6 +1698,54 @@ function viewSettings(M){
     }
     off.appendChild(c); M.appendChild(off);
   }
+  /* exercises that belong to no session: still here, still loggable */
+  const loose=orphanEx();
+  const lo=document.createElement('div');
+  lo.innerHTML='<div class="sectionlabel">Not in any session</div>';
+  if(loose.length){
+    const c=document.createElement('div'); c.className='card';
+    for(const ex of loose){
+      const row=document.createElement('div'); row.className='setrow';
+      row.innerHTML=`<div class="setname"><div class="n">${esc(ex.name)}</div>
+        <div class="s">${esc(hasPlaces(ex)
+          ? ex.places.map(p=>fmtLoad(p.load,null)+' '+p.name.toLowerCase()).join(' · ')
+          : fmtLoad(ex.load,tmplLevel(ex))+' · '+fmtVol(ex))}</div></div>
+        <button class="iconbtn edit">${ico('pencil',15)}</button>`;
+      row.querySelector('.edit').onclick=()=>nav('exercise/-/'+ex.id);
+      c.appendChild(row);
+    }
+    lo.appendChild(c);
+  } else {
+    lo.insertAdjacentHTML('beforeend',
+      '<p class="cue" style="margin:0 2px 8px">Nothing here. An exercise taken out of every session lands here rather than disappearing, and can still be added to a workout as you go.</p>');
+  }
+  const addLoose=document.createElement('button');
+  addLoose.className='btn secondary'; addLoose.style.marginTop='8px';
+  addLoose.textContent='+ New exercise'; addLoose.onclick=()=>nav('exercise/-/new');
+  lo.appendChild(addLoose); M.appendChild(lo);
+
+  /* the places he trains, and their names */
+  const pl=document.createElement('div');
+  pl.innerHTML='<div class="sectionlabel">Places</div>';
+  const pc=document.createElement('div'); pc.className='card';
+  for(const name of places()){
+    const n=placeUseCount(name);
+    const row=document.createElement('div'); row.className='setrow';
+    row.innerHTML=`<div class="setname"><div class="n">${esc(name)}</div>
+      <div class="s">${n?n+' workout'+(n===1?'':'s'):'nothing logged yet'}</div></div>
+      <button class="iconbtn edit">${ico('pencil',15)}</button>`;
+    row.querySelector('.edit').onclick=()=>nav('place/'+encodeURIComponent(name));
+    pc.appendChild(row);
+  }
+  pl.appendChild(pc);
+  const addPlace=document.createElement('button');
+  addPlace.className='btn secondary'; addPlace.style.marginTop='8px';
+  addPlace.textContent='+ Add place'; addPlace.onclick=()=>nav('place/new');
+  pl.appendChild(addPlace);
+  pl.insertAdjacentHTML('beforeend',
+    '<p class="cue" style="margin:8px 2px 0">Used by the exercises set to vary by place — each keeps its own weight for each of these.</p>');
+  M.appendChild(pl);
+
   const bk=document.createElement('div');
   bk.innerHTML=`<div class="sectionlabel">Physio report</div>
     <button class="btn secondary" id="bRep">Open report for physio</button>
@@ -1681,16 +1807,130 @@ function tmplRows(x){
     sets:p.sets, reps:p.reps+(x.mode==='secs'?' s':''), vol:vol(p.sets,p.reps), cue:x.cue||''}));
 }
 
+/* One gym became two, so what was logged at "Gym" is relabelled as the one he
+   was actually at, and the new one starts empty beside it. */
+async function migratePlaces(t){
+  if(await kvGet('placesV2')) return;
+  const OLD='Gym', NEW='City';
+  for(const k of Object.keys(t||{})) for(const e of (t[k]&&t[k].exercises)||[]){
+    if(!hasPlaces(e)) continue;
+    for(const p of e.places) if(p.name===OLD) p.name=NEW;
+    /* a place he has not trained at yet still needs numbers to start from */
+    for(const name of places()) if(!e.places.some(p=>p.name===name)){
+      const from=e.places[e.places.length-1];
+      e.places.push({name, load:JSON.parse(JSON.stringify(from.load)), sets:from.sets, reps:from.reps});
+    }
+    e.places.sort((a,b)=>places().indexOf(a.name)-places().indexOf(b.name));
+    e.place=Math.max(0,places().indexOf(e.places[e.place||0]?e.places[e.place||0].name:places()[0]));
+  }
+  const entries=await entryAll();
+  for(const en of entries){
+    if(en.type!=='workout') continue;
+    let touched=false;
+    for(const x of en.exercises||[]) if(x.place&&x.place.name===OLD){
+      x.place={i:places().indexOf(NEW), name:NEW}; touched=true;
+    }
+    if(touched) await entryPut(en);
+  }
+  await saveTemplates();
+  await kvSet('placesV2',1);
+}
+
 /* label every workout already logged for this exercise as Home */
 async function stampPlaceHistory(name){
   for(const e of S.entries){
     if(e.type!=='workout') continue;
     let touched=false;
     for(const x of e.exercises||[]) if(x.name===name&&!x.place){
-      x.place={i:0,name:PLACES[0]}; touched=true;
+      x.place={i:0,name:places()[0]}; touched=true;
     }
     if(touched) await entryPut(e);
   }
+}
+
+/* how many workouts were logged at a place */
+const placeUseCount=name=>S.entries.filter(e=>e.type==='workout'&&
+  (e.exercises||[]).some(x=>x.place&&x.place.name===name)).length;
+
+/* Renaming a place has to follow through into every exercise that keeps
+   numbers for it and every workout logged there, or the history loses its
+   label and the chart splits in two. */
+async function renamePlace(from,to){
+  const i=places().indexOf(from); if(i<0) return;
+  S.places[i]=to; await savePlaces();
+  for(const k of allSessionKeys()) for(const e of S.templates[k].exercises||[]){
+    if(!hasPlaces(e)) continue;
+    for(const p of e.places) if(p.name===from) p.name=to;
+  }
+  await saveTemplates();
+  for(const en of S.entries){
+    if(en.type!=='workout') continue;
+    let touched=false;
+    for(const x of en.exercises||[]) if(x.place&&x.place.name===from){
+      x.place={i, name:to}; touched=true;
+    }
+    if(touched) await entryPut(en);
+  }
+}
+
+function viewPlace(M,raw){
+  setTab('settings');
+  const isNew=raw==='new';
+  const name=isNew?'':decodeURIComponent(raw||'');
+  if(!isNew&&places().indexOf(name)<0){ nav('settings'); return; }
+  const used=isNew?0:placeUseCount(name);
+  const title=isNew?'New place':'Edit place';
+  setBar(title,'settings');
+  M.innerHTML=`
+    <div class="field"><label>Name</label>
+      <input type="text" id="fPName" value="${esc(name)}" placeholder="e.g. Dolphins"></div>
+    <p class="cue" style="margin:-6px 2px 18px">Shown on the Where toggle when you capture, and on its own line in the chart.</p>
+    <button class="btn" id="bSave">${isNew?'Add Place':'Save Place'}</button>
+    ${isNew?'':`<button class="btn secondary" id="bDelP" style="margin-top:10px;color:var(--danger)">Delete Place</button>
+    <p class="cue" style="margin:8px 2px 24px">${used
+      ? used+' workout'+(used===1?' is':'s are')+' logged at '+esc(name)+', so it cannot be deleted — renaming it brings the history along.'
+      : 'Nothing is logged here yet, so it can be deleted.'}</p>`}`;
+
+  const doSave=async()=>{
+    const v=$('#fPName').value.trim();
+    if(!v){ alert('Please give the place a name.'); return; }
+    if(v!==name&&places().indexOf(v)>=0){ alert(v+' already exists.'); return; }
+    if(isNew){
+      S.places.push(v); await savePlaces();
+      /* an exercise that keeps numbers per place needs a set for the new one */
+      for(const k of allSessionKeys()) for(const e of S.templates[k].exercises||[]){
+        if(!hasPlaces(e)) continue;
+        const from=e.places[e.places.length-1];
+        e.places.push({name:v, load:JSON.parse(JSON.stringify(from.load)), sets:from.sets, reps:from.reps});
+      }
+      await saveTemplates(); toast(v+' added'); nav('settings'); return;
+    }
+    if(v!==name){
+      if(used&&!confirm('Rename '+name+' to '+v+'?\nThe '+used+' workout'+(used===1?'':'s')+
+        ' logged there will be relabelled too, so the chart stays in one piece.')) return;
+      await renamePlace(name,v);
+    }
+    toast('Saved'); nav('settings');
+  };
+  formBar(title,'settings',doSave);
+  $('#bSave').onclick=doSave;
+  const bd=$('#bDelP');
+  if(bd) bd.onclick=async()=>{
+    if(used){ alert(name+' cannot be deleted while '+used+' workout'+(used===1?' is':'s are')+
+      ' logged there. Rename it instead, and the history comes along.'); return; }
+    if(places().length<=2){ alert('Two places is the minimum — an exercise split by place needs somewhere to be split between.'); return; }
+    if(!confirm('Delete '+name+'?')) return;
+    S.places=places().filter(x=>x!==name); await savePlaces();
+    for(const k of allSessionKeys()) for(const e of S.templates[k].exercises||[]){
+      if(!hasPlaces(e)) continue;
+      const at=e.places.findIndex(p=>p.name===name);
+      if(at<0) continue;
+      e.places.splice(at,1);
+      if((e.place||0)>=e.places.length) e.place=0;
+      mirrorPlace(e);
+    }
+    await saveTemplates(); toast('Deleted'); nav('settings');
+  };
 }
 
 function viewSession(M,key){
@@ -1751,9 +1991,8 @@ function viewSession(M,key){
       for(let i=0;i<S.plan.length;i++) if(S.plan[i]===key) S.plan[i]=null;
       await savePlan();
     } else {
-      if(!confirm('Delete session '+key+' and its '+t.exercises.length+' exercise'+
-        (t.exercises.length===1?'':'s')+'? Nothing is logged under it, so nothing is lost.')) return;
-      for(const ex of t.exercises) if(ex.videoId) await videoDel(ex.videoId).catch(()=>{});
+      if(!confirm('Delete session '+key+'?\nNothing is logged under it. Its '+t.exercises.length+
+        ' exercise'+(t.exercises.length===1?'':'s')+' stay in your list and can be put in another session.')) return;
       delete S.templates[key];
       for(let i=0;i<S.plan.length;i++) if(S.plan[i]===key) S.plan[i]=null;
       await savePlan();
@@ -1764,15 +2003,17 @@ function viewSession(M,key){
 
 function viewExercise(M,sess,exId){
   setTab('settings');
-  const t=S.templates[sess];
-  if(!t){ nav('settings'); return; }
+  /* sess is only where he came from: "-" means the exercise is in no session */
+  const t=S.templates[sess]||null;
   const isNew=exId==='new';
   const ex=isNew?{id:uid(),name:'',cue:'',load:{kind:'kg',value:5},sets:3,reps:10,mode:'reps',youtube:'',videoId:null}
-               :t.exercises.find(x=>x.id===exId);
+               :libEx(exId);
   if(!ex){ nav('settings'); return; }
   const w=JSON.parse(JSON.stringify(ex)); // work on a copy
+  /* which sessions use it; a new one joins the session he came from */
+  const inSess=new Set(isNew?(t?[sess]:[]):sessionsWith(ex.id));
   let newVideoBlob=null, removeVideo=false;
-  setBar((isNew?'New exercise':'Edit exercise')+' · '+sess,'settings');
+  setBar(isNew?'New exercise':'Edit exercise','settings');
   M.innerHTML=`
     <div class="field"><label>Name</label><input type="text" id="fName" value="${esc(w.name)}" placeholder="Exercise name"></div>
     <div class="field"><label>Cue / description (optional)</label><input type="text" id="fCue" value="${esc(w.cue)}" placeholder="e.g. elbow next to body"></div>
@@ -1786,9 +2027,13 @@ function viewExercise(M,sess,exId){
     <div class="controls" style="margin-bottom:14px" id="volCtl"></div>
     <div class="field"><label>Count type</label><select id="fMode">
       <option value="reps">Reps</option><option value="secs">Hold (seconds)</option></select></div>
+    <div class="field"><label>In which sessions</label><div class="levelseg" id="sessPick">${
+      sessionKeys().map(k=>`<button type="button" class="lvbtn sessbtn${inSess.has(k)?' on':''}" data-k="${k}">${k}</button>`).join('')
+      ||'<span class="cue">No sessions yet</span>'}</div></div>
+    <p class="cue" id="sessNote" style="margin:-6px 2px 14px"></p>
     ${w.levels?'':`<div class="field"><label>Weight varies by place</label><select id="fPlaces">
       <option value="">Same everywhere</option>
-      <option value="1" ${hasPlaces(w)?'selected':''}>Different at home and the gym</option></select></div>
+      <option value="1" ${hasPlaces(w)?'selected':''}>Different per place</option></select></div>
     <p class="cue" id="placeNote" style="margin:-6px 2px 14px"></p>`}
     <div class="field"><label>YouTube link (optional)</label><input type="url" id="fYt" value="${esc(w.youtube)}" placeholder="https://youtu.be/…"></div>
     <div class="field"><label>Video from this phone (optional)</label>
@@ -1799,12 +2044,24 @@ function viewExercise(M,sess,exId){
       </div>
       <input type="file" id="fVid" accept="video/*" class="hidden"></div>
     <button class="btn" id="bSave">${isNew?'Add Exercise':'Save Exercise'}</button>
-    ${isNew?'':'<button class="btn danger" id="bDel" style="margin-top:10px">Delete Exercise</button>'}`;
+    ${isNew?'':'<button class="btn danger" id="bDel" style="margin-top:10px">Delete Exercise</button>'}
+    ${isNew?'':'<p class="cue" style="margin:8px 2px 24px">Deleting takes it out of your list and every session. '+
+      'Past workouts keep it either way. To take it out of one session only, turn that session off above.</p>'}`;
   $('#fKind').value=w.load.kind; $('#fMode').value=w.mode;
+  const sessNote=()=>{ const n=inSess.size;
+    $('#sessNote').textContent=n
+      ? 'Part of '+[...inSess].sort().join(', ')+'. The same exercise in each, with one set of numbers.'
+      : 'In no session. It stays in your list and can still be added to a workout as you go.'; };
+  M.querySelectorAll('.sessbtn').forEach(btn=>{
+    btn.onclick=()=>{ const k=btn.dataset.k;
+      inSess.has(k)?inSess.delete(k):inSess.add(k);
+      btn.classList.toggle('on',inSess.has(k)); sessNote(); };
+  });
+  sessNote();
   const placeSel=$('#fPlaces');
   if(placeSel){
     const note=()=>{ $('#placeNote').textContent=placeSel.value
-      ? 'A Where toggle appears when you capture this one. Each place keeps its own weight, sets and reps, and the chart draws a line for each.'
+      ? 'A Where toggle appears when you capture this one — '+places().join(', ')+'. Each keeps its own weight, sets and reps, and the chart draws a line for each.'
       : 'One set of numbers wherever you do it.'; };
     note(); placeSel.onchange=note;
   }
@@ -1871,7 +2128,7 @@ function viewExercise(M,sess,exId){
       /* Home starts from what he already does; the gym copies it until the
          first gym workout overwrites it with the real machine weight */
       const mk=()=>({load:JSON.parse(JSON.stringify(w.load)), sets:w.sets, reps:w.reps});
-      w.places=PLACES.map(name=>Object.assign({name},mk()));
+      w.places=places().map(name=>Object.assign({name},mk()));
       w.place=0; stamp=true;
     } else if(!wantPlaces&&hasPlaces(w)){
       delete w.places; delete w.place;
@@ -1880,8 +2137,17 @@ function viewExercise(M,sess,exId){
       const P=w.places[w.place||0];
       P.load=JSON.parse(JSON.stringify(w.load)); P.sets=w.sets; P.reps=w.reps;
     }
-    if(isNew) t.exercises.push(w);
-    else { const i=t.exercises.findIndex(x=>x.id===w.id); t.exercises[i]=w; }
+    if(libAll().some(x=>x.id!==w.id&&x.name.toLowerCase()===w.name.toLowerCase())){
+      alert('There is already an exercise called '+w.name+'. Names identify an exercise, '+
+        'so two with the same name would share one history.'); return;
+    }
+    S.library[w.id]=w;
+    for(const k of allSessionKeys()){
+      const items=S.templates[k].items||(S.templates[k].items=[]);
+      const at=items.indexOf(w.id);
+      if(inSess.has(k)&&at<0) items.push(w.id);
+      else if(!inSess.has(k)&&at>=0) items.splice(at,1);
+    }
     await saveTemplates();
     /* everything logged before today was done at home, so the existing line
        stays in one piece rather than starting over */
@@ -1892,10 +2158,17 @@ function viewExercise(M,sess,exId){
   $('#bSave').onclick=doSave;
   const bDel=$('#bDel');
   if(bDel) bDel.onclick=async()=>{
-    if(!confirm('Remove "'+w.name+'" from '+t.name+'? Past workouts keep their history.')) return;
+    const where=sessionsWith(w.id);
+    if(!confirm('Delete "'+w.name+'"?\n'+(where.length
+      ? 'It comes out of '+where.join(', ')+' and out of your list. '
+      : 'It comes out of your list. ')+'Past workouts keep their history.')) return;
     if(w.videoId) await videoDel(w.videoId).catch(()=>{});
-    t.exercises=t.exercises.filter(x=>x.id!==w.id);
-    await saveTemplates(); toast('Removed'); nav('settings');
+    delete S.library[w.id];
+    for(const k of allSessionKeys()){
+      const items=S.templates[k].items||[];
+      const at=items.indexOf(w.id); if(at>=0) items.splice(at,1);
+    }
+    await saveTemplates(); toast('Deleted'); nav('settings');
   };
 }
 
@@ -1927,7 +2200,7 @@ function progressSeries(){
   for(const a of map.values()){
     const seen=[...new Set(a.map(p=>p.place).filter(Boolean))];
     if(seen.length<2) continue;
-    a.split=PLACES.filter(n=>seen.includes(n));
+    a.split=places().filter(n=>seen.includes(n));
     /* anything logged before the exercise was split was done at home; without
        this it would belong to no line at all and quietly leave the chart */
     for(const p of a) if(!p.place) p.place=a.split[0];
@@ -2104,8 +2377,8 @@ function chartBox(name,pts){
     pts.dropped?' · '+pts.dropped+' earlier '+(pts.dropped===1?'session':'sessions')+
       ' on a different unit, in the log':''}</div>`;
   if(split) box.insertAdjacentHTML('beforeend',
-    '<div class="vlegend">'+split.map((pl,i)=>
-      `<span><i style="background:var(--chart${i?'2':''})"></i>${esc(pl)}</span>`).join('')+'</div>');
+    '<div class="vlegend">'+split.map(pl=>
+      `<span><i style="background:${placeColour(pl)}"></i>${esc(pl)}</span>`).join('')+'</div>');
   if(dual) box.insertAdjacentHTML('beforeend',
     `<div class="vlegend"><span><i style="background:var(--chart)"></i>${esc(isPair?'systolic':(isLevel?'Level':unit))}</span>`+
     (isPair?`<span><i style="background:var(--chart);opacity:.45"></i>${esc(pts.pair)}</span>`:'')+
@@ -2226,8 +2499,8 @@ function buildChart(pts,unit,repLabel,levelNames,pair,fixedAxis,split){
   if(split){
     /* each place draws over the shared run of dates and joins its own points,
        stepping over the workouts done somewhere else */
-    split.forEach((pl,si)=>{
-      const col=si?'var(--chart2)':'var(--chart)';
+    split.forEach(pl=>{
+      const col=placeColour(pl);
       const own=pts.map((p,i)=>({i,v:p.value})).filter(o=>pts[o.i].place===pl);
       if(own.length>1) svg.appendChild(mk('path',{d:own.map((o,k)=>(k?'L':'M')+X(o.i)+' '+Y(o.v)).join(' '),
         fill:'none',stroke:col,'stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));

@@ -107,11 +107,11 @@ const EX = 'Standing Cable Row';   // Session B, band (kg) to begin with
   await page.click('#bSave');
   await page.waitForTimeout(900);
   const te2 = await tmpl();
-  t.check('both places are on machine levels',
+  t.check('every place is on machine levels',
     te2.places.every((p) => p.load.kind === 'machine'));
   await go(page, 'capture/B');
   const row2 = page.locator('.exrow').filter({ hasText: EX });
-  t.check('the Where toggle is there', (await row2.locator('.lvbtn.place').count()) === 2);
+  t.check('the Where toggle is there', (await row2.locator('.lvbtn.place').count()) === 3);
   t.check('and the level control with it',
     (await row2.locator('.ctl label').nth(1).textContent()) === 'Level');
 

@@ -70,8 +70,10 @@ const active = (page) => page.evaluate(() => sessionKeys());
 
   // ---------- an exercise in D behaves like any other ----------
   await page.evaluate(async () => {
-    S.templates.D.exercises.push({ id: 'dx1', name: 'Band Pull-Apart', cue: '', load: { kind: 'bandKg', value: 15 },
-      sets: 3, reps: 15, mode: 'reps', youtube: '', videoId: null });
+    const ex = { id: 'dx1', name: 'Band Pull-Apart', cue: '', load: { kind: 'bandKg', value: 15 },
+      sets: 3, reps: 15, mode: 'reps', youtube: '', videoId: null };
+    S.library[ex.id] = ex;
+    S.templates.D.items.push(ex.id);
     await saveTemplates();
   });
   await go(page, 'capture/D');

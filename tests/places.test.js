@@ -31,11 +31,12 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
   await page.waitForTimeout(900);
 
   const te = await tmpl();
-  t.check('two places exist', te.places && te.places.length === 2);
-  t.check('named Home and Gym', te.places.map((p) => p.name).join() === 'Home,Gym');
-  t.check('both start from what he already lifts',
-    te.places[0].load.value === 5 && te.places[1].load.value === 5);
-  t.check('both start from the same sets and reps',
+  t.check('three places exist', te.places && te.places.length === 3);
+  t.check('named Home, City and Dolphins',
+    te.places.map((p) => p.name).join() === 'Home,City,Dolphins');
+  t.check('all start from what he already lifts',
+    te.places.every((p) => p.load.value === 5));
+  t.check('and from the same sets and reps',
     te.places[1].sets === 3 && te.places[1].reps === 15);
   t.check('it sits at Home', te.place === 0);
   t.check('past workouts were labelled Home', await page.evaluate((n) => {
@@ -50,9 +51,9 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
   // ---------- the toggle on the capture screen ----------
   await go(page, 'capture/A');
   const seg = page.locator('.lvbtn.place');
-  t.check('a Where toggle appears', (await seg.count()) === 2);
+  t.check('a Where toggle appears', (await seg.count()) === 3);
   t.check('Home is selected', (await seg.nth(0).getAttribute('class')).includes('on'));
-  t.check('Gym is not', !(await seg.nth(1).getAttribute('class')).includes('on'));
+  t.check('the gyms are not', !(await seg.nth(1).getAttribute('class')).includes('on'));
   t.check('the label reads Where', (await page.locator('.ctl.wide label')
     .filter({ hasText: 'Where' }).count()) === 1);
 
@@ -62,8 +63,8 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
   // ---------- do a gym workout at a different weight ----------
   await seg.nth(1).click();
   await page.waitForTimeout(250);
-  t.check('Gym is now selected', (await seg.nth(1).getAttribute('class')).includes('on'));
-  t.check('the weight came across from Gym', (await weightBox.inputValue()) === '5');
+  t.check('City is now selected', (await seg.nth(1).getAttribute('class')).includes('on'));
+  t.check('the weight came across from City', (await weightBox.inputValue()) === '5');
   await weightBox.fill('22.5');
   await weightBox.blur();
   await page.waitForTimeout(200);
@@ -73,14 +74,14 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
   await page.waitForTimeout(1000);
 
   const row = await todayRow();
-  t.check('the workout saved against Gym', row && row.place && row.place.name === 'Gym');
+  t.check('the workout saved against City', row && row.place && row.place.name === 'City');
   t.check('at the gym weight', row.load.value === 22.5);
 
   const te2 = await tmpl();
-  t.check('Gym remembered 22.5', te2.places[1].load.value === 22.5);
+  t.check('City remembered 22.5', te2.places[1].load.value === 22.5);
   t.check('Home is untouched at 5', te2.places[0].load.value === 5);
-  t.check('the exercise now sits at Gym', te2.place === 1);
-  t.check('and its own numbers mirror Gym', te2.load.value === 22.5);
+  t.check('the exercise now sits at City', te2.place === 1);
+  t.check('and its own numbers mirror City', te2.load.value === 22.5);
 
   // ---------- come back: Gym is where he left off, Home still 5 ----------
   await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
@@ -105,7 +106,7 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
     await entryPut({ id: uid(), type: 'workout', session: 'A', sessions: ['A'], date: iso,
       createdAt: Date.now() - 18 * 86400000, note: '', exercises: [
         { name: n, cue: '', load: { kind: 'kg', value: 20 }, sets: 3, reps: 12, mode: 'reps',
-          skipped: false, place: { i: 1, name: 'Gym' } }] });
+          skipped: false, place: { i: 1, name: 'City' } }] });
     await loadState();
   }, EX);
 
@@ -114,14 +115,14 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
   await page.waitForTimeout(600);
   t.check('the series knows it is split', await page.evaluate((n) =>
     !!(progressSeries().get(n) || {}).split, EX));
-  t.check('split names both places', await page.evaluate((n) =>
-    (progressSeries().get(n).split || []).join() === 'Home,Gym', EX));
+  t.check('split names the places used', await page.evaluate((n) =>
+    (progressSeries().get(n).split || []).join() === 'Home,City', EX));
   const legend = await page.locator('.vlegend span').allTextContents();
-  t.check('the legend names Home and Gym', legend.join() === 'Home,Gym');
+  t.check('the legend names the places used', legend.join() === 'Home,City');
   t.check('a line is drawn for each place', (await page.locator('.viz-root svg path').count()) === 2);
   t.check('the two lines are different colours', await page.evaluate(() => {
     const p = [...document.querySelectorAll('.viz-root svg path')].map((e) => e.getAttribute('stroke'));
-    return p[0] !== p[1] && p.every((c) => /var\(--chart2?\)/.test(c));
+    return p[0] !== p[1] && p.every((c) => /var\(--chart\d?\)/.test(c));
   }));
   t.check('each line joins only its own place', await page.evaluate(() => {
     const d = [...document.querySelectorAll('.viz-root svg path')].map((e) =>
@@ -129,7 +130,7 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
     return d[1] === 2;                       // the gym line joins its two points
   }));
   t.check('the headline reports both',
-    /home 5 kg · gym 22\.5 kg/.test(await page.textContent('.vsub')));
+    /home 5 kg · city 22\.5 kg/.test(await page.textContent('.vsub')));
   t.check('there is no reps line', !(await page.innerHTML('.viz-root svg')).includes('stroke-dasharray'));
 
   await page.locator('.datatable summary').click();
@@ -139,10 +140,10 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
   t.check('and still shows reps', heads.includes('reps'));
   t.check('nothing logged before the split fell off the chart', await page.evaluate((n) => {
     const a = progressSeries().get(n);
-    return a.every((p) => p.place === 'Home' || p.place === 'Gym');
+    return a.every((p) => p.place === 'Home' || p.place === 'City');
   }, EX));
   const firstRow = await page.locator('.datatable tr').nth(1).textContent();
-  t.check('the newest row is the gym one', firstRow.includes('Gym') && firstRow.includes('22.5'));
+  t.check('the newest row is the city one', firstRow.includes('City') && firstRow.includes('22.5'));
   t.check('the weight is still editable',
     (await page.locator('.datatable .cellv').count()) > 0);
 
@@ -164,8 +165,8 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
   const doc = page.frameLocator('#rprev');
   const body = await doc.locator('body').textContent();
   t.check('the programme lists the home row', body.includes(EX + ' · Home'));
-  t.check('and the gym row', body.includes(EX + ' · Gym'));
-  t.check('the session log labels the place', /Gym/.test(body));
+  t.check('and the city row', body.includes(EX + ' · City'));
+  t.check('the session log labels the place', /City/.test(body));
   t.check('home and gym are not compared as one progression',
     !/· 5 kg → 24 kg/.test(body));
 
@@ -188,17 +189,19 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
     !!S.templates.C.exercises.find((x) => /dead ?bug/i.test(x.name)).levels));
   t.check('and is not offered places as well', (await page.locator('#fPlaces').count()) === 0);
 
-  // ---------- the same exercise in two sessions keeps two sets of numbers ----------
-  // the bug this guards: the toggle used to look the places up by name across
-  // every session, so tapping Gym in one session handed you another one's weight
+  // ---------- one exercise, used by two sessions ----------
+  // there is no longer any such thing as two copies of a name with numbers of
+  // their own: a session lists which exercises it uses, and this is one of them
   await page.evaluate(async () => {
     try { localStorage.clear(); } catch (err) {}
-    const mk = (home, gym) => ({ id: uid(), name: 'Triceps', cue: '',
-      load: { kind: 'kg', value: gym }, sets: 3, reps: 12, mode: 'reps', youtube: '', videoId: null,
-      places: [{ name: 'Home', load: { kind: 'kg', value: home }, sets: 3, reps: 12 },
-               { name: 'Gym', load: { kind: 'kg', value: gym }, sets: 3, reps: 12 }], place: 1 });
-    S.templates.A.exercises.push(mk(30, 100));
-    S.templates.B.exercises.push(mk(30, 80));
+    const ex = { id: 'tri1', name: 'Triceps', cue: '', load: { kind: 'kg', value: 80 },
+      sets: 3, reps: 12, mode: 'reps', youtube: '', videoId: null,
+      places: [{ name: 'Home', load: { kind: 'kg', value: 30 }, sets: 3, reps: 12 },
+               { name: 'City', load: { kind: 'kg', value: 80 }, sets: 3, reps: 12 },
+               { name: 'Dolphins', load: { kind: 'kg', value: 60 }, sets: 3, reps: 12 }], place: 1 };
+    S.library[ex.id] = ex;
+    S.templates.A.items.push(ex.id);
+    S.templates.B.items.push(ex.id);
     await saveTemplates(); await loadState();
   });
 
@@ -206,19 +209,45 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
   const weight = (p) => tri(p).locator('.stepper input').first().inputValue();
   const tap = async (p, i) => { await tri(p).locator('.lvbtn.place').nth(i).click(); await p.waitForTimeout(250); };
 
+  t.check('one exercise, not two', (await page.evaluate(() =>
+    Object.values(S.library).filter((e) => e.name === 'Triceps').length)) === 1);
+  t.check('and both sessions use it', (await page.evaluate(() =>
+    sessionsWith('tri1').join())) === 'A,B');
+
   await go(page, 'capture/B');
   await page.waitForTimeout(400);
-  t.check('B opens at its own gym weight', (await weight(page)) === '80');
+  t.check('B opens at the city weight', (await weight(page)) === '80');
   await tap(page, 0);
-  t.check('and its own home weight', (await weight(page)) === '30');
+  t.check('Home gives the home weight', (await weight(page)) === '30');
+  await tap(page, 2);
+  t.check('Dolphins gives its own', (await weight(page)) === '60');
   await tap(page, 1);
-  t.check('tapping back to Gym gives B its 80, not A\'s 100', (await weight(page)) === '80');
+  t.check('and City gives 80 back', (await weight(page)) === '80');
 
   await go(page, 'capture/A');
   await page.waitForTimeout(400);
   await tap(page, 0);
   await tap(page, 1);
-  t.check('and A still has its own 100', (await weight(page)) === '100');
+  t.check('the other session sees the same 80', (await weight(page)) === '80');
+
+  // ---------- a place can be renamed, and the history follows ----------
+  await page.evaluate(async () => {
+    await applyHealthImport({ days: new Map(), workouts: [] });   // no-op, keeps state settled
+    await saveEntry({ id: uid(), type: 'workout', session: 'B', sessions: ['B'],
+      date: '2026-11-02', createdAt: Date.now(), note: '', exercises: [
+        { name: 'Triceps', cue: '', load: { kind: 'kg', value: 80 }, sets: 3, reps: 12,
+          mode: 'reps', skipped: false, place: { i: 1, name: 'City' } }] });
+  });
+  t.check('the place reports its use', (await page.evaluate(() => placeUseCount('City'))) >= 1);
+  await page.evaluate(async () => { await renamePlace('City', 'Town'); await loadState(); });
+  t.check('the place was renamed', (await page.evaluate(() => places().join())) === 'Home,Town,Dolphins');
+  t.check('the exercise kept its weights under the new name', await page.evaluate(() => {
+    const e = S.library.tri1;
+    return e.places[1].name === 'Town' && e.places[1].load.value === 80;
+  }));
+  t.check('and the workout logged there came along', (await page.evaluate(() =>
+    S.entries.some((e) => (e.exercises || []).some((x) => x.place && x.place.name === 'Town')))) === true);
+  await page.evaluate(async () => { await renamePlace('Town', 'City'); await loadState(); });
 
   // ---------- the mirror is put back in step on the way in ----------
   await page.evaluate(async () => {
