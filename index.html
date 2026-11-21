@@ -399,7 +399,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v56';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v57';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -1798,13 +1798,30 @@ async function renameSessionKey(from,to){
   if(d&&d.session===from) writeDraft(Object.assign({},d,{session:to}));
 }
 
-/* the programme rows for a template exercise: one, or one per place */
+/* One row per exercise in the programme. An exercise done in three places is
+   still one exercise: the places belong inside its row, not as rows of their
+   own, which read to the physio as three different exercises. */
 function tmplRows(x){
-  const vol=(sets,reps)=>sets+' × '+reps+(x.mode==='secs'?' s':'');
+  const unit=x.mode==='secs'?' s':'';
+  const vol=(sets,reps)=>sets+' × '+reps+unit;
   if(!hasPlaces(x)) return [{name:x.name, load:fmtLoad(x.load,tmplLevel(x)),
-    sets:x.sets, reps:x.reps+(x.mode==='secs'?' s':''), vol:vol(x.sets,x.reps), cue:x.cue||''}];
-  return x.places.map(p=>({name:x.name+' · '+p.name, load:fmtLoad(p.load,null),
-    sets:p.sets, reps:p.reps+(x.mode==='secs'?' s':''), vol:vol(p.sets,p.reps), cue:x.cue||''}));
+    sets:x.sets, reps:x.reps+unit, vol:vol(x.sets,x.reps), cue:x.cue||''}];
+  const one=x.places[0];
+  const ps=x.places.map(p=>({place:p.name, load:p.load, sets:p.sets, reps:p.reps}));
+  const sameSets=ps.every(p=>p.sets===one.sets), sameReps=ps.every(p=>p.reps===one.reps);
+  return [{name:x.name,
+    load:placeList(ps,p=>fmtLoad(p.load,null)),
+    sets:sameSets?one.sets:ps.map(p=>p.sets).join(' / '),
+    reps:(sameReps?one.reps:ps.map(p=>p.reps).join(' / '))+unit,
+    vol:placeList(ps,p=>vol(p.sets,p.reps)),
+    cue:x.cue||''}];
+}
+/* "26 kg home · 70 kg city"; a value that is the same everywhere is said once */
+function placeList(items,f){
+  const vals=items.map(f), tag=p=>p.place?' '+p.place.toLowerCase():'';
+  if(items.length===1) return vals[0]+tag(items[0]);
+  if(new Set(vals).size===1) return vals[0];   /* the same everywhere: say it once */
+  return items.map((p,i)=>vals[i]+tag(p)).join(' · ');
 }
 
 /* One gym became two, so what was logged at "Gym" is relabelled as the one he
@@ -3858,17 +3875,31 @@ function reportModel(){
     const sl=(e.sessions&&e.sessions.length?e.sessions:[e.session]).join('+');
     for(const x of e.exercises){
       if(x.skipped) continue;
-      /* home and gym progress apart, so they are tracked apart — one record
-         spanning both would read a machine weight as a huge jump */
-      const label=x.name+(x.place?' · '+x.place.name:'');
-      const snap={date:e.date, load:fmtLoad(x.load,x.level||x.place), num:loadNum(x.load), vol:fmtVol(x)};
-      const rec=prog.get(label)||{name:label,count:0,first:snap,latest:snap};
-      rec.count++; rec.latest=snap; prog.set(label,rec);
-      rows.push([e.date, sl, label, fmtLoad(x.load,x.level||x.place), x.sets, x.reps+(x.mode==='secs'?' s':'')]);
+      /* Each place progresses on its own — a machine weight next to a dumbbell
+         would read as a huge jump — but the exercise is still one exercise, so
+         the places are tracked apart inside a single row. */
+      const snap={date:e.date, load:fmtLoad(x.load,x.level), num:loadNum(x.load), vol:fmtVol(x)};
+      let rec=prog.get(x.name);
+      if(!rec){ rec={name:x.name, count:0, byPlace:new Map()}; prog.set(x.name,rec); }
+      rec.count++;
+      const pk=x.place?x.place.name:'';
+      let pr=rec.byPlace.get(pk);
+      if(!pr){ pr={place:x.place?x.place.name:null, first:snap, latest:snap}; rec.byPlace.set(pk,pr); }
+      pr.latest=snap;
+      rows.push([e.date, sl, x.name,
+        fmtLoad(x.load,x.level||x.place), x.sets, x.reps+(x.mode==='secs'?' s':'')]);
     }
   }
-  const raised=[...prog.values()].filter(r=>
-    r.first.num!=null&&r.latest.num!=null&&r.latest.num>r.first.num).length;
+  /* flatten each exercise's places into the one row the report prints */
+  for(const rec of prog.values()){
+    const ps=[...rec.byPlace.values()];
+    rec.first={load:placeList(ps,p=>p.first.load), vol:placeList(ps,p=>p.first.vol)};
+    rec.latest={load:placeList(ps,p=>p.latest.load), vol:placeList(ps,p=>p.latest.vol)};
+    rec.up=ps.some(p=>p.first.num!=null&&p.latest.num!=null&&p.latest.num>p.first.num);
+    rec.down=ps.some(p=>p.first.num!=null&&p.latest.num!=null&&p.latest.num<p.first.num);
+    delete rec.byPlace;
+  }
+  const raised=[...prog.values()].filter(r=>r.up).length;
   const painDays=others.filter(e=>e.type==='injury').length;
   return {all,workouts,others,from,to,perWeek,prog:[...prog.values()],rows,raised,painDays,
     series:progressSeries()};
@@ -3915,19 +3946,27 @@ function sinceLastPhysio(m){
   const painDays=win.filter(e=>e.type==='injury').length;
 
   /* what a load looked like at the visit, and what it looks like now */
+  /* kept per place so a machine weight is never compared with a dumbbell, but
+     reported as one line per exercise */
   const base=new Map(), now=new Map();
+  const put=(map,name,place,snap)=>{
+    let m2=map.get(name); if(!m2){ m2=new Map(); map.set(name,m2); }
+    m2.set(place||'',{place:place||null, ...snap});
+  };
   for(const e of m.workouts){
     for(const x of e.exercises){
       if(x.skipped) continue;
-      const label=x.name+(x.place?' · '+x.place.name:'');
-      const snap={load:fmtLoad(x.load,x.level||x.place), vol:fmtVol(x)};
-      if(!after(e)) base.set(label,snap); else now.set(label,snap);
+      const snap={load:fmtLoad(x.load,x.level), vol:fmtVol(x)};
+      put(after(e)?now:base, x.name, x.place?x.place.name:null, snap);
     }
   }
+  const flat=m2=>{ const ps=[...m2.values()];
+    return {load:placeList(ps,p=>p.load), vol:placeList(ps,p=>p.vol)}; };
   const changes=[], steady=[];
-  for(const [name,to] of now){
-    const was=base.get(name);
-    if(!was){ changes.push({name, from:'—', to:to.load+' · '+to.vol, note:'new since the visit'}); continue; }
+  for(const [name,toMap] of now){
+    const to=flat(toMap), wasMap=base.get(name);
+    if(!wasMap){ changes.push({name, from:'—', to:to.load+' · '+to.vol, note:'new since the visit'}); continue; }
+    const was=flat(wasMap);
     if(was.load!==to.load||was.vol!==to.vol)
       changes.push({name, from:was.load+' · '+was.vol, to:to.load+' · '+to.vol, note:''});
     else steady.push(name);
@@ -4059,7 +4098,7 @@ function reportHTML(m){
     <tr><th style="width:28%">Exercise</th><th class="num">Load</th><th class="num">Sets × reps</th>
     <th class="num grp">Load</th><th class="num">Sets × reps</th><th class="num">Sessions</th></tr></thead><tbody>`);
   for(const r of m.prog){
-    const up=(r.first.num!=null&&r.latest.num!=null&&r.latest.num>r.first.num)?' up':'';
+    const up=r.up?' up':'';
     P.push(`<tr><td>${esc(r.name)}</td>
       <td class="num">${esc(r.first.load)}</td><td class="num">${esc(r.first.vol)}</td>
       <td class="num grp${up}">${esc(r.latest.load)}</td><td class="num">${esc(r.latest.vol)}</td>

@@ -113,6 +113,68 @@ const t = suite('report');
   t.check('no visit yet is handled', body2.includes('No physio appointment has been recorded'));
   t.check('and it covers everything instead', body2.includes('whole period'));
 
+  // ---------- an exercise done in three places is still one exercise ----------
+  // it used to take a row per place in the programme and in the progression,
+  // which reads to a physio as three different exercises
+  await page.evaluate(async () => {
+    const ex = { id: 'tri1', name: 'Triceps', cue: 'Elbows in', load: { kind: 'kg', value: 80 },
+      sets: 3, reps: 12, mode: 'reps', youtube: '', videoId: null,
+      places: [{ name: 'Home', load: { kind: 'kg', value: 30 }, sets: 3, reps: 12 },
+               { name: 'City', load: { kind: 'kg', value: 80 }, sets: 3, reps: 12 },
+               { name: 'Dolphins', load: { kind: 'kg', value: 62.5 }, sets: 3, reps: 10 }], place: 1 };
+    S.library[ex.id] = ex; S.templates.B.items.push(ex.id);
+    await saveTemplates();
+    const plan = [['2026-09-26', 'Home', 26], ['2026-10-03', 'City', 70],
+                  ['2026-10-17', 'Dolphins', 55], ['2026-10-31', 'Home', 30],
+                  ['2026-11-14', 'City', 77.5], ['2026-11-19', 'Dolphins', 62.5]];
+    for (const [iso, place, kg] of plan) {
+      for (const e of S.entries.filter((x) => x.type === 'workout' && x.date === iso)) await entryDel(e.id);
+      await entryPut({ id: uid(), type: 'workout', session: 'B', sessions: ['B'], date: iso,
+        createdAt: Date.parse(iso), note: '', exercises: [{ name: 'Triceps', cue: '',
+          load: { kind: 'kg', value: kg }, sets: 3, reps: 12, mode: 'reps', skipped: false,
+          place: { i: places().indexOf(place), name: place } }] });
+    }
+    await loadState();
+  });
+  await go(page, 'report');
+  await page.waitForTimeout(1200);
+  const d2 = page.frameLocator('#rprev');
+
+  const progRows = (await d2.locator('table tr').allTextContents()).filter((r) => /Triceps/.test(r));
+  t.check('the programme names it once', await page.evaluate(() => {
+    const rows = [];
+    for (const k of sessionKeys()) for (const x of S.templates[k].exercises) rows.push(...tmplRows(x));
+    return rows.filter((r) => r.name === 'Triceps').length === 1;
+  }));
+  t.check('the progression has one record for it', await page.evaluate(() =>
+    reportModel().prog.filter((r) => r.name === 'Triceps').length === 1));
+  t.check('no row is labelled with a place', !progRows.some((r) => /Triceps · /.test(r)));
+
+  const model = await page.evaluate(() => {
+    const m = reportModel();
+    const r = m.prog.find((x) => x.name === 'Triceps');
+    const row = tmplRows(S.library.tri1)[0];
+    return { first: r.first.load, latest: r.latest.load, vol: r.first.vol,
+             up: r.up, count: r.count, progLoad: row.load, progSets: row.sets, progVol: row.vol };
+  });
+  t.check('the first column lists each place', model.first === '26 kg home · 70 kg city · 55 kg dolphins');
+  t.check('and so does the latest', model.latest === '30 kg home · 77.5 kg city · 62.5 kg dolphins');
+  t.check('sets and reps are said once when they match everywhere', model.vol === '3 × 12');
+  t.check('it counts every session, wherever it was done', model.count === 6);
+  t.check('and is marked as a rise', model.up === true);
+  t.check('the programme row lists the three weights', model.progLoad.split(' · ').length === 3);
+  t.check('with the sets collapsed, since they are all three', String(model.progSets) === '3');
+  t.check('and the reps spelled out, since one place differs',
+    model.progVol === '3 × 12 home · 3 × 12 city · 3 × 10 dolphins');
+
+  const txt2 = await page.evaluate(() => reportText(reportModel()));
+  /* three tables mention it — what changed since the visit, the programme,
+     and the progression — and each names it exactly once */
+  t.check('the text report names it once per table',
+    txt2.split('\n').filter((l) => l.startsWith('Triceps\t')).length === 3);
+  t.check('the data sheet does not repeat the place in the name',
+    !txt2.split('\n').some((l) => /\tTriceps · /.test(l)));
+
   await browser.close();
   t.end(errs);
 })().catch((e) => { console.error(e); process.exit(1); });

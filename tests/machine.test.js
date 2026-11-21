@@ -95,10 +95,9 @@ const EX = 'Standing Cable Row';   // Session B, band (kg) to begin with
   const body = await doc.locator('body').textContent();
   t.check('the programme shows the level', body.includes('level 8'));
   t.check('the progression table has the exercise', body.includes(EX));
-  t.check('a rise in level counts as a rise', await page.evaluate((n) => {
-    const m = reportModel();
-    const r = m.prog.find((x) => x.name.startsWith(n));
-    return !!r && r.first.num != null && r.latest.num != null;
+  t.check('the progression tracks it', await page.evaluate((n) => {
+    const r = reportModel().prog.find((x) => x.name === n);
+    return !!r && /level/.test(r.latest.load);
   }, EX));
 
   // ---------- it works with home and gym too ----------

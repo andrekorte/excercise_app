@@ -164,8 +164,17 @@ const EX = 'Lateral Raise 90/90';   // lives in Session A, 5 kg, 3 x 15
   await page.waitForTimeout(1100);
   const doc = page.frameLocator('#rprev');
   const body = await doc.locator('body').textContent();
-  t.check('the programme lists the home row', body.includes(EX + ' · Home'));
-  t.check('and the city row', body.includes(EX + ' · City'));
+  /* one row for the exercise, with its places inside it */
+  t.check('the programme names it once', await page.evaluate((n) => {
+    const rows = [];
+    for (const k of sessionKeys()) for (const x of S.templates[k].exercises) rows.push(...tmplRows(x));
+    return rows.filter((r) => r.name === n).length === 1;
+  }, EX));
+  t.check('and lists its places in the one row', await page.evaluate((n) => {
+    const x = libFind(n);
+    return /home/.test(tmplRows(x)[0].load) && /city/.test(tmplRows(x)[0].load);
+  }, EX));
+  t.check('rather than a row per place', !body.includes(EX + ' · Home'));
   t.check('the session log labels the place', /City/.test(body));
   t.check('home and gym are not compared as one progression',
     !/· 5 kg → 24 kg/.test(body));
