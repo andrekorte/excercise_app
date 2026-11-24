@@ -75,6 +75,45 @@ const t = suite('smoke');
   t.check('a backup has the data', exp.includes('Wall Slides'));
   t.check('a backup never has the key', !exp.includes('sk-ant-test'));
 
+  // ---------- the tab bar is part of the layout, not floating over it ----------
+  // it used to be position:fixed over a scrolling page, and iOS would now and
+  // then strand it in the middle of the screen with the workout showing below
+  for (const size of [{ width: 320, height: 700 }, { width: 390, height: 844 },
+                      { width: 430, height: 932 }]) {
+    await page.setViewportSize(size);
+    await go(page, 'capture/A');
+    await page.waitForTimeout(400);
+    const m = await page.evaluate(() => {
+      const nav = document.querySelector('nav.tabs'), r = nav.getBoundingClientRect();
+      const M = document.querySelector('#main'), mr = M.getBoundingClientRect();
+      return { pos: getComputedStyle(nav).position,
+        atBottom: Math.abs(r.bottom - innerHeight) < 1,
+        pageScrolls: document.documentElement.scrollHeight > innerHeight + 1,
+        mainAboveNav: Math.round(mr.bottom) <= Math.round(r.top) + 1,
+        sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth };
+    });
+    const at = size.width + 'px';
+    t.check('the bar is not floating at ' + at, m.pos !== 'fixed');
+    t.check('it sits on the bottom edge at ' + at, m.atBottom);
+    t.check('the page itself does not scroll at ' + at, !m.pageScrolls);
+    t.check('and nothing can hide behind it at ' + at, m.mainAboveNav);
+    t.check('no sideways scroll at ' + at, !m.sideways);
+  }
+  await page.setViewportSize({ width: 390, height: 950 });
+
+  // the long screens scroll inside themselves, and reach their end
+  for (const hash of ['capture/B', 'settings', 'progress']) {
+    await go(page, hash);
+    await page.waitForTimeout(500);
+    const ok = await page.evaluate(() => {
+      const M = document.querySelector('#main');
+      M.scrollTop = M.scrollHeight;
+      const nav = document.querySelector('nav.tabs').getBoundingClientRect();
+      return Math.round(M.getBoundingClientRect().bottom) <= Math.round(nav.top) + 1;
+    });
+    t.check(hash + ' scrolls to its end above the bar', ok);
+  }
+
   await browser.close();
   t.end(errs);
 })().catch((e) => { console.error(e); process.exit(1); });

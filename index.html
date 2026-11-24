@@ -41,15 +41,21 @@
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
+/* The bar used to be position:fixed over a scrolling page, and iOS would now
+   and then leave it stranded in the middle of the screen with the workout
+   showing underneath. Nothing is fixed any more: the page is exactly one
+   screen tall, the bar is the last row of it, and the middle scrolls. */
+html{height:100%}
 body{
   background:var(--page); color:var(--ink);
   font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
   font-size:16px; line-height:1.45;
-  padding-bottom:calc(64px + env(safe-area-inset-bottom));
+  height:100%; display:flex; flex-direction:column; overflow:hidden;
   overscroll-behavior-y:none;
 }
+@supports (height:100dvh){ body{height:100dvh} }
 header.appbar{
-  position:sticky; top:0; z-index:20; background:var(--page);
+  flex:none; z-index:20; background:var(--page);
   padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
   display:flex; align-items:center; gap:10px; min-height:44px;
   border-bottom:1px solid var(--ring);
@@ -60,7 +66,9 @@ header.appbar h1{font-size:19px; margin:0; font-weight:700; flex:1;
 .backbtn svg{margin-left:-6px}
 .cancelbtn{border:0;background:none;color:var(--accent);font-size:16px;font-weight:600;padding:6px 4px;cursor:pointer;font-family:inherit;flex:none}
 .savebtn{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:7px 18px;font-size:14.5px;font-weight:650;cursor:pointer;font-family:inherit;flex:none}
-main{padding:16px; max-width:560px; margin:0 auto}
+main{flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain; padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+  max-width:560px; margin:0 auto; width:100%}
 .hidden{display:none!important}
 
 /* buttons */
@@ -122,9 +130,10 @@ main{padding:16px; max-width:560px; margin:0 auto}
 .exrow .exname{font-weight:650; flex:1}
 .cue{color:var(--muted); font-size:13px; margin-top:2px}
 .controls{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
-.ctl{flex:1; min-width:96px}
-/* the load carries the longest value — 162.5 kg — so it gets the wider share */
-.ctl.load{flex:1.6 1 124px}
+/* weight, sets and reps share one row on a phone; the load carries the
+   longest value — 162.5 kg — so it gets the wider share of it */
+.ctl{flex:1; min-width:84px}
+.ctl.load{flex:1.6 1 104px}
 .ctl label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600}
 .stepper{display:flex; align-items:stretch; border-radius:10px; box-shadow:inset 0 0 0 1px var(--ring); overflow:hidden; background:var(--page)}
 .stepper button{border:0; background:none; color:var(--accent); font-size:18px; width:24px; cursor:pointer; font-weight:700; flex:none; padding:0}
@@ -220,7 +229,7 @@ table.dtl td.num{text-align:right; white-space:nowrap; font-variant-numeric:tabu
 
 /* tab bar */
 nav.tabs{
-  position:fixed; bottom:0; left:0; right:0; z-index:20;
+  flex:none; z-index:20;
   display:flex; background:var(--page); border-top:1px solid var(--ring);
   padding:6px 0 calc(6px + env(safe-area-inset-bottom));
 }
@@ -384,6 +393,9 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
   background:var(--ink); color:var(--page); padding:10px 18px; border-radius:999px; font-size:14px; font-weight:650;
   z-index:60; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap}
 .toast.show{opacity:1}
+
+/* the narrowest phones are 2px short of a long weight on one row */
+@media (max-width:374px){ .stepper input{font-size:14px} .stepper button{width:22px} }
 </style>
 </head>
 <body>
@@ -399,7 +411,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v57';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v58';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -895,7 +907,7 @@ function render(){
   draftFlush=null;
   const h=location.hash.replace(/^#/,'')||'home';
   const parts=h.split('/');
-  const M=$('#main'); M.innerHTML=''; window.scrollTo(0,0);
+  const M=$('#main'); M.innerHTML=''; M.scrollTop=0;
   if(typeof coachCleanup==='function'){ coachCleanup(); coachCleanup=null; }
   try{
     if(parts[0]==='home') return viewHome(M);
@@ -1616,7 +1628,8 @@ function viewDetail(M,id){
 
 /* ============ settings: sessions & exercises ============ */
 /* re-render without losing the reader's place */
-function rerender(){ const y=window.scrollY; render(); window.scrollTo(0,y); }
+function rerender(){ const M=$('#main'), y=M?M.scrollTop:0; render();
+  const M2=$('#main'); if(M2) M2.scrollTop=y; }
 const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const todayIdx=()=>(new Date().getDay()+6)%7;
 const savePlan=()=>kvSet('weekPlan',S.plan);
@@ -3291,9 +3304,9 @@ async function viewCoach(M,arg){
      app bar, once, and then the page stays put while it fills in downwards. */
   const anchor=(el)=>{
     if(!el) return;
-    const bar=document.querySelector('header.appbar');
-    const top=el.getBoundingClientRect().top+window.scrollY-((bar?bar.offsetHeight:0)+10);
-    window.scrollTo({top:Math.max(0,top),behavior:'smooth'});
+    const M=$('#main'); if(!M) return;
+    const top=M.scrollTop+(el.getBoundingClientRect().top-M.getBoundingClientRect().top)-10;
+    M.scrollTo({top:Math.max(0,top),behavior:'smooth'});
   };
   for(const m of msgs){
     const txt=typeof m.content==='string'?m.content
