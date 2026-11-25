@@ -130,9 +130,10 @@ main{flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:to
 .exrow .exname{font-weight:650; flex:1}
 .cue{color:var(--muted); font-size:13px; margin-top:2px}
 .controls{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
-/* weight, sets and reps share one row on a phone; the load carries the
-   longest value — 162.5 kg — so it gets the wider share of it */
-.ctl{flex:1; min-width:84px}
+/* Weight, sets and reps share one row on a phone. The load gets the wider
+   share because it carries the longest value, but not by starving the other
+   two: each of the three has to hold its number without clipping. */
+.ctl{flex:1; min-width:96px}
 .ctl.load{flex:1.6 1 104px}
 .ctl label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600}
 .stepper{display:flex; align-items:stretch; border-radius:10px; box-shadow:inset 0 0 0 1px var(--ring); overflow:hidden; background:var(--page)}
@@ -395,7 +396,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 .toast.show{opacity:1}
 
 /* the narrowest phones are 2px short of a long weight on one row */
-@media (max-width:374px){ .stepper input{font-size:14px} .stepper button{width:22px} }
+@media (max-width:389px){ .stepper input{font-size:14px} .stepper button{width:22px} }
 </style>
 </head>
 <body>
@@ -411,7 +412,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v58';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v59';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;

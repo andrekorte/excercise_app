@@ -114,6 +114,42 @@ const t = suite('smoke');
     t.check(hash + ' scrolls to its end above the bar', ok);
   }
 
+  // ---------- every number in a capture row is readable ----------
+  // twice now a layout change has left one of the three boxes too narrow and
+  // clipped the value — a weight of 162.5, or a plain 12 reps
+  await page.evaluate(async () => {
+    const mk = (id, name, load, sets, reps, mode) => ({ id, name, cue: '', load,
+      sets, reps, mode: mode || 'reps', youtube: '', videoId: null });
+    const a = mk('w_a', 'Widest', { kind: 'kg', value: 162.5 }, 3, 20);
+    const b = mk('w_b', 'Held', { kind: 'none', value: null }, 3, 45, 'secs');
+    const c = mk('w_c', 'Banded', { kind: 'bandKg', value: 100 }, 3, 12);
+    c.places = [{ name: 'Home', load: { kind: 'bandKg', value: 20 }, sets: 3, reps: 12 },
+                { name: 'City', load: { kind: 'bandKg', value: 100 }, sets: 3, reps: 12 },
+                { name: 'Dolphins', load: { kind: 'bandKg', value: 55 }, sets: 3, reps: 12 }];
+    c.place = 1;
+    for (const e of [a, b, c]) { S.library[e.id] = e; S.templates.A.items.push(e.id); }
+    await saveTemplates(); await loadState();
+  });
+  for (const size of [{ width: 320, height: 800 }, { width: 375, height: 812 },
+                      { width: 390, height: 844 }, { width: 430, height: 932 }]) {
+    await page.setViewportSize(size);
+    await go(page, 'capture/A');
+    await page.waitForTimeout(400);
+    const clipped = await page.evaluate(() => {
+      const bad = [];
+      for (const row of document.querySelectorAll('.exrow'))
+        for (const ctl of row.querySelectorAll('.ctl')) {
+          const inp = ctl.querySelector('input');
+          if (inp && inp.scrollWidth > inp.clientWidth + 1)
+            bad.push(ctl.querySelector('label').textContent + '="' + inp.value + '"');
+        }
+      return bad;
+    });
+    t.check('no number is clipped at ' + size.width + 'px — ' + (clipped.join(', ') || 'all fit'),
+      clipped.length === 0);
+  }
+  await page.setViewportSize({ width: 390, height: 950 });
+
   await browser.close();
   t.end(errs);
 })().catch((e) => { console.error(e); process.exit(1); });
