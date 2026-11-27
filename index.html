@@ -412,7 +412,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v59';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v60';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -1635,6 +1635,12 @@ const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const todayIdx=()=>(new Date().getDay()+6)%7;
 const savePlan=()=>kvSet('weekPlan',S.plan);
 const planDaysFor=k=>S.plan.map((v,i)=>v===k?DAYS[i]:null).filter(Boolean);
+/* how a session is headed in the report: "Session A (Mon, Wed, Fri)", so the
+   physio can see which days each one is meant for */
+function sessHeading(k){
+  const d=planDaysFor(k);
+  return sessName(k)+(d.length?' ('+d.join(', ')+')':'');
+}
 /* the week at a glance: one slot per day, today marked */
 function weekPlanStrip(){
   const wrap=document.createElement('div'); wrap.className='weekplan';
@@ -4074,9 +4080,8 @@ function reportHTML(m){
     <span class="hint">as of ${esc(fmtFull(todayStr()))}</span></div>`);
   for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
-    const sched=planDaysFor(k);
-    P.push(`<table><caption><span class="code">${k}</span>${esc(t.name)} · ${t.exercises.length} exercises${
-      sched.length?' · '+esc(sched.join(', ')):''}</caption>
+    P.push(`<table><caption><span class="code">${k}</span>${esc(sessHeading(k))} · ${
+      t.exercises.length} exercises</caption>
       <thead><tr><th style="width:36%">Exercise</th><th style="width:20%">Load</th>
       <th style="width:16%">Sets × reps</th><th>Cue</th></tr></thead><tbody>`);
     for(const x of t.exercises) for(const r of tmplRows(x))
@@ -4186,7 +4191,7 @@ function reportText(m){
   L.push('2. CURRENT PROGRAMME');
   for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
-    L.push('');L.push(t.name);
+    L.push('');L.push(sessHeading(k));
     L.push(tab(['Exercise','Load','Sets','Reps']));
     for(const x of t.exercises) for(const r of tmplRows(x)) L.push(tab([r.name,r.load,r.sets,r.reps]));
   }
@@ -4261,7 +4266,7 @@ function reportEmailHTML(m){
   P.push(`<div style="${H2}">2 · Current programme</div>`);
   for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
-    P.push(`<div style="${F};font-size:13px;font-weight:700;margin:12px 0 4px">${esc(t.name)}</div>`);
+    P.push(`<div style="${F};font-size:13px;font-weight:700;margin:12px 0 4px">${esc(sessHeading(k))}</div>`);
     table(['Exercise','Load','Sets × reps','Cue'],
       t.exercises.flatMap(x=>tmplRows(x).map(r=>[r.name,r.load,r.vol,r.cue])),1);
   }
@@ -4611,7 +4616,7 @@ function reportPDF(m){
   for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
     d.room(60);
-    d.text(t.name,PT.M,9.5,{bold:true,rgb:PDF_INK}); d.y-=13;
+    d.text(sessHeading(k),PT.M,9.5,{bold:true,rgb:PDF_INK}); d.y-=13;
     pdfTable(d,pdfCols(['Exercise','Load','Sets','Reps'],[5,3,1,1.4],[0,0,1,1]),
       t.exercises.flatMap(x=>tmplRows(x).map(r=>[r.name,r.load,r.sets,r.reps])));
   }

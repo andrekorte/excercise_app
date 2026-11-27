@@ -175,6 +175,34 @@ const t = suite('report');
   t.check('the data sheet does not repeat the place in the name',
     !txt2.split('\n').some((l) => /\tTriceps · /.test(l)));
 
+  // ---------- each session is headed with the days it is scheduled for ----------
+  await page.evaluate(async () => {
+    S.plan = ['A', 'A', 'A', 'B', null, 'C', null];   // Mon-Wed A, Thu B, Sat C
+    await savePlan();
+  });
+  await go(page, 'report');
+  await page.waitForTimeout(1200);
+  const caps = (await page.frameLocator('#rprev').locator('caption').allTextContents()).join(' | ');
+  t.check('the screen names the days in brackets', /Session A \(Mon, Tue, Wed\)/.test(caps));
+  t.check('a session on one day too', /Session B \(Thu\)/.test(caps));
+
+  const txt3 = await page.evaluate(() => reportText(reportModel()));
+  t.check('the plain text carries them', txt3.includes('Session A (Mon, Tue, Wed)'));
+  const mail = await page.evaluate(() => reportEmailHTML(reportModel()));
+  t.check('the pasted email carries them', mail.includes('Session A (Mon, Tue, Wed)'));
+  t.check('and the PDF does', await page.evaluate(() => {
+    const s = new TextDecoder('latin1').decode(reportPDF(reportModel()));
+    return s.includes('Session A \\(Mon, Tue, Wed\\)');
+  }));
+
+  // a session with no day assigned gets no empty brackets
+  await page.evaluate(async () => { S.plan = ['A', null, null, null, null, null, null]; await savePlan(); });
+  await go(page, 'report');
+  await page.waitForTimeout(1200);
+  const caps2 = (await page.frameLocator('#rprev').locator('caption').allTextContents()).join(' | ');
+  t.check('an unscheduled session has no brackets', /Session B ·/.test(caps2));
+  t.check('while the scheduled one still shows its day', /Session A \(Mon\)/.test(caps2));
+
   await browser.close();
   t.end(errs);
 })().catch((e) => { console.error(e); process.exit(1); });
