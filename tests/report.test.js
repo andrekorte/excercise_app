@@ -203,6 +203,52 @@ const t = suite('report');
   t.check('an unscheduled session has no brackets', /Session B ·/.test(caps2));
   t.check('while the scheduled one still shows its day', /Session A \(Mon\)/.test(caps2));
 
+  // ---------- the weekly schedule, a line per day ----------
+  await page.evaluate(async () => {
+    S.plan = ['A', 'A', 'A', 'B', null, 'C', null];
+    await savePlan();
+  });
+  await go(page, 'report');
+  await page.waitForTimeout(1300);
+  const fr3 = page.frameLocator('#rprev');
+  const heads = (await fr3.locator('.shead h2').allTextContents());
+  t.check('there is a weekly schedule section', heads.includes('Weekly schedule'));
+  t.check('it sits right after the programme',
+    heads.indexOf('Weekly schedule') === heads.indexOf('Current programme') + 1);
+  t.check('the sections below it renumbered themselves',
+    (await fr3.locator('.shead .snum').allTextContents()).join() === '01,02,03,04,05,06,07');
+
+  const wk = await page.evaluate(() => weekRows());
+  t.check('seven days, one line each', wk.length === 7);
+  t.check('Monday names its session', wk[0].session === 'Session A');
+  t.check('and lists that day\'s exercises',
+    wk[0].ex === 'Wall Slides, Watson Shrug, Lateral Raise 90/90');
+  t.check('the same exercises on every day that session falls', wk[1].ex === wk[0].ex);
+  t.check('an empty day reads Rest day', wk[4].session === 'Rest day' && wk[4].ex === '');
+  t.check('and so does Sunday', wk[6].session === 'Rest day');
+  t.check('Saturday has its own session', wk[5].session === 'Session C');
+
+  const wkTxt = await page.evaluate(() => reportText(reportModel()));
+  t.check('the plain text has the section', wkTxt.includes('WEEKLY SCHEDULE'));
+  t.check('with a day per line',
+    /Mon\tSession A\tWall Slides, Watson Shrug, Lateral Raise 90\/90/.test(wkTxt));
+  t.check('and the rest days', /Fri\tRest day/.test(wkTxt));
+  const wkMail = await page.evaluate(() => reportEmailHTML(reportModel()));
+  t.check('the pasted email has it', wkMail.includes('Weekly schedule') && wkMail.includes('Rest day'));
+  t.check('the PDF has it', await page.evaluate(() => {
+    const s = new TextDecoder('latin1').decode(reportPDF(reportModel()));
+    return /\d\. WEEKLY SCHEDULE/.test(s) && s.includes('Rest day');
+  }));
+
+  // with nothing planned the section stays away rather than printing seven rest days
+  await page.evaluate(async () => { S.plan = [null, null, null, null, null, null, null]; await savePlan(); });
+  await go(page, 'report');
+  await page.waitForTimeout(1300);
+  t.check('no plan, no section',
+    !(await page.frameLocator('#rprev').locator('.shead h2').allTextContents()).includes('Weekly schedule'));
+  t.check('and the numbering closes up', (await page.frameLocator('#rprev')
+    .locator('.shead .snum').allTextContents()).join() === '01,02,03,04,05,06');
+
   await browser.close();
   t.end(errs);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -412,7 +412,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v60';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v61';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -1635,6 +1635,15 @@ const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const todayIdx=()=>(new Date().getDay()+6)%7;
 const savePlan=()=>kvSet('weekPlan',S.plan);
 const planDaysFor=k=>S.plan.map((v,i)=>v===k?DAYS[i]:null).filter(Boolean);
+/* The week a day at a time: what is on each, or that it is a rest day. */
+const weekPlanned=()=>!!(S.plan&&S.plan.some(Boolean));
+function weekRows(){
+  return DAYS.map((day,i)=>{
+    const k=S.plan?S.plan[i]:null, t=k?S.templates[k]:null;
+    if(!t) return {day, session:'Rest day', ex:''};
+    return {day, session:sessName(k), ex:t.exercises.map(x=>x.name).join(', ')};
+  });
+}
 /* how a session is headed in the report: "Session A (Mon, Wed, Fri)", so the
    physio can see which days each one is meant for */
 function sessHeading(k){
@@ -2949,13 +2958,13 @@ function coachData(){
   const meds=S.entries.filter(e=>e.type==='meditation')
     .sort((a,b)=>a.date.localeCompare(b.date));
   if(meds.length){
-    L.push('');L.push('5. MEDITATION (not part of the shoulder programme)');
+    L.push('');L.push('MEDITATION (not part of the shoulder programme)');
     L.push(['Date','Points','Within 5 min of waking','Outside','Length'].join('\t'));
     for(const e of meds) L.push([e.date,(e.points||medPoints(e)),e.afterWake?'yes':'no',
       e.outside?'yes':'no',e.timed?(e.minutes||MED_MIN)+' min':'logged by hand'].join('\t'));
   }
   if(S.plan&&S.plan.some(Boolean)){
-    L.push('');L.push('6. THE WEEKLY PLAN HE SET HIMSELF');
+    L.push('');L.push('THE WEEKLY PLAN HE SET HIMSELF');
     L.push(S.plan.map((v,i)=>DAYS[i]+': '+(v?'Session '+v:'rest')).join('\n'));
   }
   /* sleep, resting heart rate, HRV and weight out of Apple Health — his own
@@ -2963,7 +2972,7 @@ function coachData(){
   const hd=S.entries.filter(e=>e.type==='health').sort((a,b)=>a.date.localeCompare(b.date)).slice(-60);
   if(hd.length){
     const cols=Object.values(HEALTH_METRICS);
-    L.push('');L.push('7. SLEEP, RECOVERY AND WEIGHT (from Apple Health and Whoop; '+
+    L.push('');L.push('SLEEP, RECOVERY AND WEIGHT (from Apple Health and Whoop; '+
       'not part of the physio programme, and not every day is filled in)');
     L.push(['Date',...cols.map(m=>m.name+' ('+m.unit+')')].join('\t'));
     for(const e of hd) L.push([e.date,...cols.map(m=>e[m.key]==null?'—':e[m.key])].join('\t'));
@@ -3810,6 +3819,7 @@ section{margin-top:34px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 caption{text-align:left;font-weight:700;font-size:13.5px;padding:13px 0 6px}
 caption .code{font-family:ui-monospace,Menlo,monospace;color:#0e5a5f;margin-right:7px}
+tr.rest td{color:#8a9490}
 th{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#71827e;text-align:left;
  font-weight:700;border-bottom:1px solid #c3cfcc;padding:6px 9px 6px 0}
 td{padding:6px 9px 6px 0;border-bottom:1px solid #dde4e2;vertical-align:top}
@@ -4049,9 +4059,11 @@ function reportHTML(m){
     <div class="stat"><div class="n">${m.perWeek.toFixed(1)}</div><div class="l">Per week</div></div>
     <div class="stat"><div class="n">${m.raised}</div><div class="l">Loads increased</div></div>
     <div class="stat flag"><div class="n">${m.painDays}</div><div class="l">Days off (pain)</div></div></div>`);
-  // 01 programme
+  /* numbered as they are written, so a section can be added without
+     renumbering the ones below it by hand */
+  let secN=0; const sn=()=>'<span class="snum">'+String(++secN).padStart(2,'0')+'</span>';
   const z=sinceLastPhysio(m);
-  P.push(`<section><div class="shead"><span class="snum">01</span><h2>Summary since last physio visit</h2>
+  P.push(`<section><div class="shead">${sn()}<h2>Summary since last physio visit</h2>
     <span class="hint">${z.from?fmtFull(z.from):'whole period'}</span></div>`);
   P.push('<div class="sumgrid">'+
     `<div class="sumcard"><b>${z.workouts.length}</b><span>SESSIONS</span></div>`+
@@ -4076,7 +4088,7 @@ function reportHTML(m){
   }
   P.push('</section>');
 
-  P.push(`<section><div class="shead"><span class="snum">02</span><h2>Current programme</h2>
+  P.push(`<section><div class="shead">${sn()}<h2>Current programme</h2>
     <span class="hint">as of ${esc(fmtFull(todayStr()))}</span></div>`);
   for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
@@ -4091,7 +4103,16 @@ function reportHTML(m){
   }
   P.push(`</section>`);
   // 02 session log
-  P.push(`<section><div class="shead"><span class="snum">03</span><h2>Session log</h2>
+  if(weekPlanned()){
+    P.push(`<section><div class="shead">${sn()}<h2>Weekly schedule</h2>
+      <span class="hint">what falls on each day</span></div>
+      <table><thead><tr><th style="width:11%">Day</th><th style="width:26%">Session</th>
+      <th>Exercises</th></tr></thead><tbody>`);
+    for(const r of weekRows()) P.push(`<tr${r.ex?'':' class="rest"'}><td>${esc(r.day)}</td>
+      <td>${esc(r.session)}</td><td class="dim">${esc(r.ex)}</td></tr>`);
+    P.push(`</tbody></table></section>`);
+  }
+  P.push(`<section><div class="shead">${sn()}<h2>Session log</h2>
     <span class="hint">most recent first · ${m.workouts.length} sessions · ${m.painDays} day${m.painDays===1?'':'s'} off</span></div>
     <table><thead><tr><th style="width:20%">Date</th><th style="width:12%">Type</th>
     <th style="width:24%">Content</th><th>Notes</th></tr></thead><tbody>`);
@@ -4111,7 +4132,7 @@ function reportHTML(m){
   }
   P.push(`</tbody></table></section>`);
   // 03 progression
-  P.push(`<section><div class="shead"><span class="snum">04</span><h2>Load progression by exercise</h2>
+  P.push(`<section><div class="shead">${sn()}<h2>Load progression by exercise</h2>
     <span class="hint">first → latest</span></div>
     <table><thead><tr><th></th><th colspan="2">First in period</th><th colspan="2" class="grp">Latest</th><th></th></tr>
     <tr><th style="width:28%">Exercise</th><th class="num">Load</th><th class="num">Sets × reps</th>
@@ -4130,7 +4151,7 @@ function reportHTML(m){
   const chartable=[...m.series.entries()]
     .filter(([n,pts])=>pts.length>1&&pts.unit!=='points'&&!pts.personal);
   if(chartable.length){
-    P.push(`<section><div class="shead"><span class="snum">05</span><h2>Progress charts</h2>
+    P.push(`<section><div class="shead">${sn()}<h2>Progress charts</h2>
       <span class="hint">${chartable.length} exercises</span></div>
       <div class="legend"><span><i></i>Weight · left axis</span><span><i class="dash"></i>Reps · right axis</span></div>`);
     for(const [name,pts] of chartable){
@@ -4143,7 +4164,7 @@ function reportHTML(m){
     P.push(`</section>`);
   }
   // 05 full data
-  P.push(`<section><div class="shead"><span class="snum">06</span><h2>Full data</h2>
+  P.push(`<section><div class="shead">${sn()}<h2>Full data</h2>
     <span class="hint">${m.rows.length} rows</span></div>
     <p class="apxnote">Every recorded exercise, one row per exercise per session.</p>
     <table><thead><tr><th>Date</th><th>Session</th><th>Exercise</th>
@@ -4176,7 +4197,8 @@ function reportText(m){
   L.push(m.workouts.length+' sessions ('+m.perWeek.toFixed(1)+'/week) · '+m.raised+' loads increased · '+m.painDays+' day(s) off with pain');
   const z=sinceLastPhysio(m);
   L.push('');
-  L.push('1. SUMMARY SINCE LAST PHYSIO VISIT');
+  let tN=0; const tn=()=>(++tN)+'. ';
+  L.push(tn()+'SUMMARY SINCE LAST PHYSIO VISIT');
   for(const ln of sinceLines(z,m)) L.push(ln);
   if(z.changes.length){
     L.push('');
@@ -4188,14 +4210,19 @@ function reportText(m){
     for(const nt of z.notes) L.push(tab([nt.date,nt.label,nt.text]));
   }
   L.push('');
-  L.push('2. CURRENT PROGRAMME');
+  L.push(tn()+'CURRENT PROGRAMME');
   for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
     L.push('');L.push(sessHeading(k));
     L.push(tab(['Exercise','Load','Sets','Reps']));
     for(const x of t.exercises) for(const r of tmplRows(x)) L.push(tab([r.name,r.load,r.sets,r.reps]));
   }
-  L.push('');L.push('3. SESSION LOG (most recent first)');
+  if(weekPlanned()){
+    L.push('');L.push(tn()+'WEEKLY SCHEDULE');
+    L.push(tab(['Day','Session','Exercises']));
+    for(const r of weekRows()) L.push(tab([r.day,r.session,r.ex]));
+  }
+  L.push('');L.push(tn()+'SESSION LOG (most recent first)');
   L.push(tab(['Date','Type','Content','Notes']));
   for(const e of [...m.all].reverse()){
     if(e.type==='physio'){
@@ -4205,13 +4232,13 @@ function reportText(m){
     }
     L.push(tab([e.date,entryLabel(e),entryContent(e),(e.note||e.comments||'').replace(/\n/g,' · ')]));
   }
-  L.push('');L.push('4. LOAD PROGRESSION');
+  L.push('');L.push(tn()+'LOAD PROGRESSION');
   L.push(tab(['Exercise','First load','First sets x reps','Latest load','Latest sets x reps','Sessions']));
   for(const r of m.prog) L.push(tab([r.name,r.first.load,r.first.vol,r.latest.load,r.latest.vol,r.count]));
   const bps=[...S.entries].filter(e=>e.type==='bp')
     .sort((a,b)=>a.date.localeCompare(b.date)||(a.time||'').localeCompare(b.time||''));
   if(bps.length){
-    L.push('');L.push('5. BLOOD PRESSURE');
+    L.push('');L.push(tn()+'BLOOD PRESSURE');
     L.push(tab(['Date','Time','Systolic','Diastolic','Pulse','When','Note']));
     for(const e of bps) L.push(tab([e.date,e.time||'',e.sys,e.dia,e.pulse==null?'':e.pulse,
       bpTagName(e.tag),(e.comments||'').replace(/\n/g,' · ')]));
@@ -4254,7 +4281,8 @@ function reportEmailHTML(m){
     · ${m.painDays} day${m.painDays===1?'':'s'} off with pain</div>`);
 
   const z=sinceLastPhysio(m);
-  P.push(`<div style="${H2}">1 · Summary since last physio visit</div>`);
+  let eN=0; const en=()=>(++eN)+' · ';
+  P.push(`<div style="${H2}">${en()}Summary since last physio visit</div>`);
   P.push(`<div style="${F};font-size:13px;line-height:1.6;margin:0 0 10px">`+
     sinceLines(z,m).map(esc).join('<br>')+`</div>`);
   if(z.changes.length) table(['What changed','At the visit','Now'],
@@ -4263,24 +4291,28 @@ function reportEmailHTML(m){
     P.push(`<div style="${F};font-size:12px;font-weight:700;margin:12px 0 4px">What he wrote at the time</div>`);
     table(['Date','Type','Note'],z.notes.map(nt=>[fmtFull(nt.date),nt.label,nt.text]),0);
   }
-  P.push(`<div style="${H2}">2 · Current programme</div>`);
+  P.push(`<div style="${H2}">${en()}Current programme</div>`);
   for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
     P.push(`<div style="${F};font-size:13px;font-weight:700;margin:12px 0 4px">${esc(sessHeading(k))}</div>`);
     table(['Exercise','Load','Sets × reps','Cue'],
       t.exercises.flatMap(x=>tmplRows(x).map(r=>[r.name,r.load,r.vol,r.cue])),1);
   }
-  P.push(`<div style="${H2}">3 · Session log · most recent first</div>`);
+  if(weekPlanned()){
+    P.push(`<div style="${H2}">${en()}Weekly schedule</div>`);
+    table(['Day','Session','Exercises'],weekRows().map(r=>[r.day,r.session,r.ex]),1);
+  }
+  P.push(`<div style="${H2}">${en()}Session log · most recent first</div>`);
   table(['Date','Type','Content','Notes'],
     [...m.all].reverse().map(e=>e.type==='physio'
       ? ['— PHYSIO APPOINTMENT —',fmtFull(e.date),(e.comments||'').replace(/\n/g,' · '),'']
       : [e.date,entryLabel(e),entryContent(e),(e.note||e.comments||'').replace(/\n/g,' · ')]),0);
 
-  P.push(`<div style="${H2}">4 · Load progression</div>`);
+  P.push(`<div style="${H2}">${en()}Load progression</div>`);
   table(['Exercise','First load','First sets × reps','Latest load','Latest sets × reps','Sessions'],
     m.prog.map(r=>[r.name,r.first.load,r.first.vol,r.latest.load,r.latest.vol,r.count]),1);
 
-  P.push(`<div style="${H2}">5 · Full data · ${m.rows.length} rows</div>`);
+  P.push(`<div style="${H2}">${en()}Full data · ${m.rows.length} rows</div>`);
   table(['Date','Session','Exercise','Load','Sets','Reps'],m.rows,3);
 
   P.push(`<div style="color:#71827e;font-size:12px;margin-top:18px">Every figure was entered in the
@@ -4595,7 +4627,8 @@ function reportPDF(m){
   d.y-=20;
 
   const z=sinceLastPhysio(m);
-  pdfHeading(d,1,'Summary since last physio visit');
+  let n=1;
+  pdfHeading(d,n++,'Summary since last physio visit');
   for(const ln of sinceLines(z,m)){
     d.room(16);
     for(const seg of pdfWrap(ln,PT.W-2*PT.M,9)){ d.text(seg,PT.M,9,{rgb:PDF_INK}); d.y-=12; }
@@ -4612,7 +4645,7 @@ function reportPDF(m){
       z.notes.map(nt=>[fmtDate(nt.date),nt.label,nt.text]));
   }
 
-  pdfHeading(d,2,'Current programme');
+  pdfHeading(d,n++,'Current programme');
   for(const k of sessionKeys()){
     const t=S.templates[k]; if(!t) continue;
     d.room(60);
@@ -4621,7 +4654,12 @@ function reportPDF(m){
       t.exercises.flatMap(x=>tmplRows(x).map(r=>[r.name,r.load,r.sets,r.reps])));
   }
 
-  pdfHeading(d,3,'Session log — most recent first');
+  if(weekPlanned()){
+    pdfHeading(d,n++,'Weekly schedule');
+    pdfTable(d,pdfCols(['Day','Session','Exercises'],[1.1,2.4,6],[0,0,0]),
+      weekRows().map(r=>[r.day,r.session,r.ex]));
+  }
+  pdfHeading(d,n++,'Session log — most recent first');
   pdfTable(d,pdfCols(['Date','Type','What','Notes'],[2,1.5,3.4,3.6]),
     [...m.all].reverse().map(e=>e.type==='physio'
       ? {visit:'PHYSIO APPOINTMENT · '+fmtFull(e.date)+
@@ -4629,13 +4667,12 @@ function reportPDF(m){
       : [fmtDate(e.date),entryLabel(e),entryContent(e),
          (e.note||e.comments||'').replace(/\n/g,' · ')]));
 
-  pdfHeading(d,4,'Load progression');
+  pdfHeading(d,n++,'Load progression');
   pdfTable(d,pdfCols(['Exercise','First','','Latest','','Sessions'],[3.4,1.5,1.4,1.5,1.4,1],[0,0,0,0,0,1]),
     m.prog.map(r=>[r.name,r.first.load,r.first.vol,r.latest.load,r.latest.vol,r.count]));
 
   const bps=[...S.entries].filter(e=>e.type==='bp')
     .sort((a,b)=>a.date.localeCompare(b.date)||(a.time||'').localeCompare(b.time||''));
-  let n=5;
   if(bps.length){
     pdfHeading(d,n++,'Blood pressure');
     pdfTable(d,pdfCols(['Date','Time','Systolic','Diastolic','Pulse','When'],
