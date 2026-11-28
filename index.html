@@ -74,8 +74,11 @@ header.appbar h1{font-size:19px; margin:0; font-weight:700; flex:1;
 .backbtn svg{margin-left:-6px}
 .cancelbtn{border:0;background:none;color:var(--accent);font-size:16px;font-weight:600;padding:6px 4px;cursor:pointer;font-family:inherit;flex:none}
 .savebtn{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:7px 18px;font-size:14.5px;font-weight:650;cursor:pointer;font-family:inherit;flex:none}
+/* No safe-area padding here: the tab bar sits below and already holds the
+   home indicator's space. Adding it again left a dead strip at the end of
+   every scroll. */
 main{flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
-  overscroll-behavior-y:contain; padding:16px 16px calc(16px + var(--sab));
+  overscroll-behavior-y:contain; padding:16px;
   max-width:560px; margin:0 auto; width:100%}
 .hidden{display:none!important}
 
@@ -420,7 +423,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v62';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v63';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -1789,10 +1792,10 @@ function viewSettings(M){
     <p class="cue" style="margin:6px 2px 4px">Programme, session log, progression, charts and full data — emailed as one file.</p>
     <div class="sectionlabel">Backup</div>
     <div class="btnrow"><button class="btn secondary" id="bExp">Export data</button><button class="btn secondary" id="bImp">Import</button></div>
-    <p class="cue" style="margin:4px 2px 24px">Your data lives only on this phone. Export regularly as a backup (videos are not included in exports).</p>
+    <p class="cue" style="margin:4px 2px 6px">Your data lives only on this phone. Export regularly as a backup (videos are not included in exports).</p>
     <input type="file" id="fImp" accept="application/json,.json" class="hidden">
     <div class="sectionlabel">Version</div>
-    <p class="cue" style="margin:4px 2px 24px">Shoulder Trainer ${APP_VER}. If a change I asked for is missing, close the app
+    <p class="cue" style="margin:4px 2px 6px">Shoulder Trainer ${APP_VER}. If a change I asked for is missing, close the app
       from the app switcher, open it, then close and open it once more.</p>`;
   M.appendChild(bk);
   $('#bRep').onclick=()=>nav('report');
@@ -1941,7 +1944,7 @@ function viewPlace(M,raw){
     <p class="cue" style="margin:-6px 2px 18px">Shown on the Where toggle when you capture, and on its own line in the chart.</p>
     <button class="btn" id="bSave">${isNew?'Add Place':'Save Place'}</button>
     ${isNew?'':`<button class="btn secondary" id="bDelP" style="margin-top:10px;color:var(--danger)">Delete Place</button>
-    <p class="cue" style="margin:8px 2px 24px">${used
+    <p class="cue" style="margin:8px 2px 6px">${used
       ? used+' workout'+(used===1?' is':'s are')+' logged at '+esc(name)+', so it cannot be deleted — renaming it brings the history along.'
       : 'Nothing is logged here yet, so it can be deleted.'}</p>`}`;
 
@@ -2006,7 +2009,7 @@ function viewSession(M,key){
     <button class="btn" id="bSave">${isNew?'Add Session':'Save Session'}</button>
     ${isNew?'':`<button class="btn secondary" id="bRemove" style="margin-top:10px;color:var(--danger)">${
       t.archived?'Put back in the programme':(used?'Take out of the programme':'Delete Session')}</button>`}
-    ${isNew?'':`<p class="cue" style="margin:8px 2px 24px">${
+    ${isNew?'':`<p class="cue" style="margin:8px 2px 6px">${
       t.archived?'This session is hidden from the capture screen; the '+used+' workout'+(used===1?'':'s')+' logged under it keep their history.'
       :(used?used+' workout'+(used===1?' is':'s are')+' logged under '+key+', so it can be taken out of the programme but not deleted — the history keeps its label either way.'
            :'Nothing is logged under this session yet, so it can be deleted outright.')}</p>`}`;
@@ -2099,7 +2102,7 @@ function viewExercise(M,sess,exId){
       <input type="file" id="fVid" accept="video/*" class="hidden"></div>
     <button class="btn" id="bSave">${isNew?'Add Exercise':'Save Exercise'}</button>
     ${isNew?'':'<button class="btn danger" id="bDel" style="margin-top:10px">Delete Exercise</button>'}
-    ${isNew?'':'<p class="cue" style="margin:8px 2px 24px">Deleting takes it out of your list and every session. '+
+    ${isNew?'':'<p class="cue" style="margin:8px 2px 6px">Deleting takes it out of your list and every session. '+
       'Past workouts keep it either way. To take it out of one session only, turn that session off above.</p>'}`;
   $('#fKind').value=w.load.kind; $('#fMode').value=w.mode;
   const sessNote=()=>{ const n=inSess.size;
@@ -3750,7 +3753,7 @@ function viewHealth(M){
   imp.innerHTML=`<div class="sectionlabel">Import</div>
     <button class="btn" id="bHImp">Import from Apple Health</button>
     <input type="file" id="fHImp" accept=".csv,.json,.txt,text/csv,application/json,text/plain" class="hidden">
-    <p class="cue" style="margin:8px 2px 24px">Pick the file your Health shortcut saved. Importing the same
+    <p class="cue" style="margin:8px 2px 6px">Pick the file your Health shortcut saved. Importing the same
       day twice updates it rather than doubling it up, so running the shortcut often is harmless.
       Whoop and Runkeeper both write into Apple Health, so they come along too.</p>`;
   M.appendChild(imp);
@@ -4378,11 +4381,11 @@ function viewReport(M){
       <button class="btn secondary" id="bAddr">Change address</button>
     </div>
     <p class="cue" id="addrLine" style="margin:2px 2px 2px">No address saved yet</p>
-    <p class="cue" style="margin:8px 2px 24px"><b>Email report</b> copies the report as formatted tables
+    <p class="cue" style="margin:8px 2px 6px"><b>Email report</b> copies the report as formatted tables
       and opens Mail — long-press in the message and Paste. The tables keep their layout in Mail and still
       paste into Excel as columns. <b>Email as PDF</b> makes the full document, charts and all, and hands it
       to the share sheet — choose Mail and it arrives as an attachment ready to address.</p>
-    <p class="cue" id="pdfMsg" style="margin:-14px 2px 24px"></p>`;
+    <p class="cue" id="pdfMsg" style="margin:-14px 2px 6px"></p>`;
   $('#rprev').srcdoc=html;
   const subject='Shoulder rehab progress report — '+fmtFull(m.from)+' to '+fmtFull(m.to);
   const promptAddr=()=>{

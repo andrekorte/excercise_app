@@ -102,6 +102,24 @@ const t = suite('smoke');
     t.check(hash + ': the bar is a sensible height (' + g.navH + ')', g.navH >= 70 && g.navH <= 92);
   }
 
+  // ---------- scrolled to the end, the content reaches the bar ----------
+  // main used to add the home indicator's inset as bottom padding, which the
+  // tab bar below it already reserved, leaving a dead strip at every scroll end
+  for (const hash of ['home', 'capture/A', 'settings', 'progress']) {
+    await go(page, hash);
+    await page.waitForTimeout(500);
+    const gap = await page.evaluate(() => {
+      const M = document.querySelector('#main');
+      M.scrollTop = M.scrollHeight;
+      if (M.scrollHeight <= M.clientHeight + 1) return null;   // nothing to scroll
+      const kids = [...M.children];
+      const last = kids[kids.length - 1].getBoundingClientRect();
+      return Math.round(M.getBoundingClientRect().bottom - last.bottom);
+    });
+    if (gap === null) continue;
+    t.check(hash + ': no dead strip at the end of the scroll (' + gap + 'px)', gap <= 32);
+  }
+
   // ---------- the tab bar is part of the layout, not floating over it ----------
   // it used to be position:fixed over a scrolling page, and iOS would now and
   // then strand it in the middle of the screen with the workout showing below
