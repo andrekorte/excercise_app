@@ -46,19 +46,20 @@
 :root{ --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px) }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
-/* The bar used to be position:fixed over a scrolling page, and iOS would now
-   and then leave it stranded in the middle of the screen with the workout
-   showing underneath. Nothing is fixed any more: the page is exactly one
-   screen tall, the bar is the last row of it, and the middle scrolls. */
+/* How tall is the screen? CSS has several answers on iOS — 100%, 100vh,
+   100dvh and inset:0 — and in a home-screen app they disagree. Three
+   releases were spent picking one and being wrong, each leaving a band of
+   empty page under the tab bar. So the height is no longer asked of CSS: it
+   is measured from visualViewport, which is what is actually on the screen,
+   and written into --vh by fitShell(). The fallback matters only before the
+   first measurement and in a browser without visualViewport. */
 html{height:100%}
-/* Pinned to the viewport rather than sized as a percentage of it: 100% and
-   100dvh disagree on iOS in a home-screen app, which left a band of empty
-   page under the tab bar. inset:0 has nothing to disagree about. */
 body{
   background:var(--page); color:var(--ink);
   font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
   font-size:16px; line-height:1.45;
-  position:fixed; inset:0;
+  position:fixed; top:0; left:0; right:0;
+  height:var(--vh,100%);
   display:flex; flex-direction:column; overflow:hidden;
   overscroll-behavior-y:none;
 }
@@ -243,7 +244,7 @@ table.dtl td.num{text-align:right; white-space:nowrap; font-variant-numeric:tabu
 nav.tabs{
   flex:none; z-index:20;
   display:flex; background:var(--page); border-top:1px solid var(--ring);
-  padding:5px 0 var(--sab);
+  padding:5px 0 min(var(--sab),34px);
 }
 nav.tabs a{flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; min-width:0;
   text-decoration:none; color:var(--muted); font-size:10.5px; font-weight:600; padding:4px 0 2px;
@@ -423,7 +424,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v63';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v64';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -1796,8 +1797,10 @@ function viewSettings(M){
     <input type="file" id="fImp" accept="application/json,.json" class="hidden">
     <div class="sectionlabel">Version</div>
     <p class="cue" style="margin:4px 2px 6px">Shoulder Trainer ${APP_VER}. If a change I asked for is missing, close the app
-      from the app switcher, open it, then close and open it once more.</p>`;
+      from the app switcher, open it, then close and open it once more.</p>
+    <p class="cue" id="shellInfo" style="margin:4px 2px 6px;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;line-height:1.5;word-break:break-word"></p>`;
   M.appendChild(bk);
+  { const si=$('#shellInfo'); if(si) si.textContent=shellReadout(); }
   $('#bRep').onclick=()=>nav('report');
   $('#bExp').onclick=exportData;
   $('#bImp').onclick=()=>$('#fImp').click();
@@ -4744,7 +4747,39 @@ async function importData(ev){
 }
 
 /* ================= boot ================= */
+/* ================= the shell's height =================
+   Measured, not asked of CSS. visualViewport.height is what is actually on
+   the screen, so the tab bar lands on the bottom edge of it whichever
+   viewport iOS decides to hand CSS. */
+function fitShell(){
+  const vv=window.visualViewport;
+  const h=Math.round(vv&&vv.height?vv.height:window.innerHeight);
+  if(h>0) document.documentElement.style.setProperty('--vh',h+'px');
+}
+/* what the phone actually reports, for when a screenshot is not enough */
+function shellReadout(){
+  const cs=getComputedStyle(document.documentElement);
+  const nav=document.querySelector('nav.tabs'), nr=nav?nav.getBoundingClientRect():null;
+  const vv=window.visualViewport;
+  return ['vv '+(vv?Math.round(vv.width)+'x'+Math.round(vv.height):'—'),
+    'win '+window.innerWidth+'x'+window.innerHeight,
+    'scr '+screen.width+'x'+screen.height+' @'+(window.devicePixelRatio||1),
+    'sab '+(cs.getPropertyValue('--sab').trim()||'?')+
+      ' sat '+(cs.getPropertyValue('--sat').trim()||'?'),
+    'body '+Math.round(document.body.getBoundingClientRect().height),
+    'nav '+(nr?Math.round(nr.height)+' ends '+Math.round(nr.bottom):'—'),
+    'standalone '+(navigator.standalone?'yes':'no')].join(' · ');
+}
+
 (async function(){
+  fitShell();
+  window.addEventListener('resize',fitShell);
+  window.addEventListener('orientationchange',()=>setTimeout(fitShell,200));
+  if(window.visualViewport){
+    visualViewport.addEventListener('resize',fitShell);
+    visualViewport.addEventListener('scroll',fitShell);
+  }
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') fitShell(); });
   try{
     db=await openDB();
     await loadState();

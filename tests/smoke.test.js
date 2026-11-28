@@ -102,6 +102,31 @@ const t = suite('smoke');
     t.check(hash + ': the bar is a sensible height (' + g.navH + ')', g.navH >= 70 && g.navH <= 92);
   }
 
+  // ---------- the bar cannot balloon, whatever inset the phone reports ----------
+  // three releases were spent guessing which viewport iOS hands CSS. The
+  // height is measured from visualViewport now, and the home indicator's
+  // space is capped, so an inset this browser cannot reproduce cannot
+  // stretch the bar either.
+  for (const sab of ['0px', '34px', '99px', '150px']) {
+    await go(page, 'settings');
+    await page.addStyleTag({ content: ':root{--sab:' + sab + '!important}' });
+    await page.waitForTimeout(350);
+    const m = await page.evaluate(() => {
+      const nav = document.querySelector('nav.tabs'), nr = nav.getBoundingClientRect();
+      const vv = Math.round(window.visualViewport ? visualViewport.height : innerHeight);
+      return { h: Math.round(nr.height), pad: getComputedStyle(nav).paddingBottom,
+               flush: Math.abs(nr.bottom - vv) < 1,
+               vh: getComputedStyle(document.documentElement).getPropertyValue('--vh').trim(),
+               vv };
+    });
+    t.check('inset ' + sab + ': the bar stays a bar (' + m.h + 'px)', m.h <= 92);
+    t.check('inset ' + sab + ': no more than the home indicator below it', parseFloat(m.pad) <= 34);
+    t.check('inset ' + sab + ': still on the bottom edge', m.flush);
+    t.check('inset ' + sab + ': the height is the measured one', m.vh === m.vv + 'px');
+  }
+  await go(page, 'home');
+  await page.waitForTimeout(300);
+
   // ---------- scrolled to the end, the content reaches the bar ----------
   // main used to add the home indicator's inset as bottom padding, which the
   // tab bar below it already reserved, leaving a dead strip at every scroll end
