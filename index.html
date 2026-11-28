@@ -6,7 +6,7 @@
 <title>Shoulder Trainer</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Shoulder">
 <meta name="theme-color" content="#f5f5f3">
 <link rel="manifest" href="manifest.webmanifest">
@@ -244,7 +244,7 @@ table.dtl td.num{text-align:right; white-space:nowrap; font-variant-numeric:tabu
 nav.tabs{
   flex:none; z-index:20;
   display:flex; background:var(--page); border-top:1px solid var(--ring);
-  padding:5px 0 min(var(--sab),34px);
+  padding:5px 0 var(--sabEff, 0px);
 }
 nav.tabs a{flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; min-width:0;
   text-decoration:none; color:var(--muted); font-size:10.5px; font-weight:600; padding:4px 0 2px;
@@ -424,7 +424,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v64';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v65';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;
@@ -916,6 +916,7 @@ function setTab(name){
   document.querySelectorAll('nav.tabs a').forEach(a=>a.classList.toggle('active',a.dataset.tab===name));
 }
 function render(){
+  fitShell();          /* insets can land late; never lay out against stale ones */
   closeOverlay();
   draftFlush=null;
   const h=location.hash.replace(/^#/,'')||'home';
@@ -4752,9 +4753,23 @@ async function importData(ev){
    the screen, so the tab bar lands on the bottom edge of it whichever
    viewport iOS decides to hand CSS. */
 function fitShell(){
+  const root=document.documentElement;
   const vv=window.visualViewport;
   const h=Math.round(vv&&vv.height?vv.height:window.innerHeight);
-  if(h>0) document.documentElement.style.setProperty('--vh',h+'px');
+  if(h>0) root.style.setProperty('--vh',h+'px');
+  /* Does the page actually reach the bottom of the screen? Not always: this
+     phone hands a home-screen app the screen less the status bar and lays it
+     out from the top, so the page stops 60-odd points short and the home
+     indicator is nowhere near it. Reserving space for an indicator that is
+     outside the page only adds to the dead band. The giveaway is a top inset
+     together with a view shorter than the screen. */
+  const cs=getComputedStyle(root);
+  const sat=parseFloat(cs.getPropertyValue('--sat'))||0;
+  const sab=parseFloat(cs.getPropertyValue('--sab'))||0;
+  const portrait=h>=window.innerWidth;
+  const short=Math.max(0,(screen&&screen.height?screen.height:h)-h);
+  const reaches=!(portrait&&short>2&&sat>2);
+  root.style.setProperty('--sabEff',(reaches?Math.min(sab,34):0)+'px');
 }
 /* what the phone actually reports, for when a screenshot is not enough */
 function shellReadout(){
@@ -4768,11 +4783,14 @@ function shellReadout(){
       ' sat '+(cs.getPropertyValue('--sat').trim()||'?'),
     'body '+Math.round(document.body.getBoundingClientRect().height),
     'nav '+(nr?Math.round(nr.height)+' ends '+Math.round(nr.bottom):'—'),
+    'sabEff '+(cs.getPropertyValue('--sabEff').trim()||'?'),
+    'client '+document.documentElement.clientHeight,
     'standalone '+(navigator.standalone?'yes':'no')].join(' · ');
 }
 
 (async function(){
   fitShell();
+  window.addEventListener('load',fitShell);
   window.addEventListener('resize',fitShell);
   window.addEventListener('orientationchange',()=>setTimeout(fitShell,200));
   if(window.visualViewport){

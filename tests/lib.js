@@ -31,6 +31,17 @@ async function open(opts) {
   const o = opts || {};
   const browser = await chromium.launch({ executablePath: CHROME, args: o.args || [] });
   const ctx = await browser.newContext({ viewport: o.viewport || { width: 390, height: 950 } });
+  /* An emulated phone should also report an emulated screen: Playwright
+     leaves screen.* as the host's, and the app uses the difference between
+     the screen and the viewport to tell whether the page reaches the bottom
+     of the display. */
+  if (o.insets !== false) await ctx.addInitScript(() => {
+    const d = (k, get) => Object.defineProperty(window.screen, k, { get, configurable: true });
+    d('height', () => window.innerHeight);
+    d('width', () => window.innerWidth);
+    d('availHeight', () => window.innerHeight);
+    d('availWidth', () => window.innerWidth);
+  });
   if (o.insets !== false) await ctx.addInitScript((css) => {
     const put = () => {
       if (!document.head || document.getElementById('testInsets')) return;
