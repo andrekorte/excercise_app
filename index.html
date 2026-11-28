@@ -39,6 +39,11 @@
   --warn:#b98200; --warn-bg:#fdf3da;
   --shadow:0 1px 2px rgba(20,20,18,.05);
 }
+/* The phone's safe areas, as variables rather than bare env(): a browser
+   reports env() as 0, so a layout that only looks right at zero inset used to
+   pass every check here and come out wrong on the phone. These can be set to
+   a real iPhone's insets and the layout checked against them. */
+:root{ --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px) }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 /* The bar used to be position:fixed over a scrolling page, and iOS would now
@@ -46,17 +51,20 @@ html,body{margin:0;padding:0}
    showing underneath. Nothing is fixed any more: the page is exactly one
    screen tall, the bar is the last row of it, and the middle scrolls. */
 html{height:100%}
+/* Pinned to the viewport rather than sized as a percentage of it: 100% and
+   100dvh disagree on iOS in a home-screen app, which left a band of empty
+   page under the tab bar. inset:0 has nothing to disagree about. */
 body{
   background:var(--page); color:var(--ink);
   font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
   font-size:16px; line-height:1.45;
-  height:100%; display:flex; flex-direction:column; overflow:hidden;
+  position:fixed; inset:0;
+  display:flex; flex-direction:column; overflow:hidden;
   overscroll-behavior-y:none;
 }
-@supports (height:100dvh){ body{height:100dvh} }
 header.appbar{
   flex:none; z-index:20; background:var(--page);
-  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+  padding:calc(10px + var(--sat)) 16px 10px;
   display:flex; align-items:center; gap:10px; min-height:44px;
   border-bottom:1px solid var(--ring);
 }
@@ -67,7 +75,7 @@ header.appbar h1{font-size:19px; margin:0; font-weight:700; flex:1;
 .cancelbtn{border:0;background:none;color:var(--accent);font-size:16px;font-weight:600;padding:6px 4px;cursor:pointer;font-family:inherit;flex:none}
 .savebtn{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:7px 18px;font-size:14.5px;font-weight:650;cursor:pointer;font-family:inherit;flex:none}
 main{flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
-  overscroll-behavior-y:contain; padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+  overscroll-behavior-y:contain; padding:16px 16px calc(16px + var(--sab));
   max-width:560px; margin:0 auto; width:100%}
 .hidden{display:none!important}
 
@@ -232,10 +240,10 @@ table.dtl td.num{text-align:right; white-space:nowrap; font-variant-numeric:tabu
 nav.tabs{
   flex:none; z-index:20;
   display:flex; background:var(--page); border-top:1px solid var(--ring);
-  padding:6px 0 calc(6px + env(safe-area-inset-bottom));
+  padding:5px 0 var(--sab);
 }
-nav.tabs a{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0;
-  text-decoration:none; color:var(--muted); font-size:10.5px; font-weight:600; padding:5px 0 3px;
+nav.tabs a{flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; min-width:0;
+  text-decoration:none; color:var(--muted); font-size:10.5px; font-weight:600; padding:4px 0 2px;
   letter-spacing:.02em; white-space:nowrap}
 nav.tabs a svg{display:block}
 nav.tabs a.active{color:var(--accent)}
@@ -365,7 +373,7 @@ details.datatable td:last-child,details.datatable th:last-child{text-align:right
 .dots i{width:6px; height:6px; border-radius:50%; background:var(--muted); animation:blip 1.1s infinite}
 .dots i:nth-child(2){animation-delay:.18s} .dots i:nth-child(3){animation-delay:.36s}
 @keyframes blip{0%,60%,100%{opacity:.25} 30%{opacity:1}}
-.askbar{position:sticky; bottom:0; background:var(--page); padding:9px 0 calc(6px + env(safe-area-inset-bottom));
+.askbar{position:sticky; bottom:0; background:var(--page); padding:9px 0 calc(6px + var(--sab));
   display:flex; gap:8px; align-items:flex-end; margin-top:6px}
 .askbar textarea{flex:1; min-height:46px; max-height:132px; resize:none; padding:12px 14px;
   font:inherit; font-size:16px; border:0; border-radius:16px; background:var(--surface); color:var(--ink);
@@ -382,7 +390,7 @@ details.datatable td:last-child,details.datatable th:last-child{text-align:right
 /* video overlay */
 .overlay{position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.85);
   display:flex; align-items:center; justify-content:center; flex-direction:column; padding:16px}
-.overlay .close{position:absolute; top:calc(14px + env(safe-area-inset-top)); right:16px;
+.overlay .close{position:absolute; top:calc(14px + var(--sat)); right:16px;
   border:0; background:rgba(255,255,255,.15); color:#fff; width:38px; height:38px; border-radius:999px; cursor:pointer;
   display:inline-flex; align-items:center; justify-content:center}
 .overlay video, .overlay iframe{width:100%; max-width:560px; aspect-ratio:16/9; border:0; border-radius:12px; background:#000}
@@ -390,7 +398,7 @@ details.datatable td:last-child,details.datatable th:last-child{text-align:right
 
 .note-inline{white-space:pre-wrap; color:var(--ink-2); font-size:15px}
 a.plain{color:var(--accent); text-decoration:none; font-weight:600}
-.toast{position:fixed; left:50%; bottom:calc(84px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+.toast{position:fixed; left:50%; bottom:calc(84px + var(--sab)); transform:translateX(-50%);
   background:var(--ink); color:var(--page); padding:10px 18px; border-radius:999px; font-size:14px; font-weight:650;
   z-index:60; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap}
 .toast.show{opacity:1}
@@ -412,7 +420,7 @@ a.plain{color:var(--accent); text-decoration:none; font-weight:600}
 
 <script>
 'use strict';
-const APP_VER='v61';   /* bumped with the service worker so the build is visible in the app */
+const APP_VER='v62';   /* bumped with the service worker so the build is visible in the app */
 /* ================= IndexedDB ================= */
 const DB_NAME='shoulder-trainer', DB_VER=1;
 let db=null;

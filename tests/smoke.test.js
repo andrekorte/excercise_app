@@ -75,6 +75,33 @@ const t = suite('smoke');
   t.check('a backup has the data', exp.includes('Wall Slides'));
   t.check('a backup never has the key', !exp.includes('sk-ant-test'));
 
+  // ---------- the shell fills the screen exactly, on every screen ----------
+  // with the phone's safe areas applied, which is where this went wrong: a
+  // band of empty page sat under the tab bar and nothing here could see it
+  for (const hash of ['home', 'capture/A', 'settings', 'progress', 'coach', 'report', 'health']) {
+    await go(page, hash);
+    await page.waitForTimeout(450);
+    const g = await page.evaluate(() => {
+      const nav = document.querySelector('nav.tabs');
+      if (!nav) return { skip: true };
+      const nr = nav.getBoundingClientRect();
+      const M = document.querySelector('#main').getBoundingClientRect();
+      return { skip: false,
+        bodyH: Math.round(document.body.getBoundingClientRect().height),
+        viewH: innerHeight,
+        belowNav: Math.round(innerHeight - nr.bottom),
+        mainToNav: Math.round(nr.top - M.bottom),
+        navH: Math.round(nr.height) };
+    });
+    if (g.skip) continue;
+    t.check(hash + ': the shell fills the screen', g.bodyH === g.viewH);
+    t.check(hash + ': nothing below the tab bar', g.belowNav === 0);
+    t.check(hash + ': no gap above it', g.mainToNav === 0);
+    /* 49pt of bar is the iOS norm; with a 34pt home indicator that is 83-ish.
+       Anything much over means dead space like the band this test was written for. */
+    t.check(hash + ': the bar is a sensible height (' + g.navH + ')', g.navH >= 70 && g.navH <= 92);
+  }
+
   // ---------- the tab bar is part of the layout, not floating over it ----------
   // it used to be position:fixed over a scrolling page, and iOS would now and
   // then strand it in the middle of the screen with the workout showing below

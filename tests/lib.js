@@ -21,10 +21,27 @@ function suite(name) {
   };
 }
 
+/* A browser reports env(safe-area-inset-*) as 0, so a layout that is only
+   right at zero inset passed every check here and came out wrong on the
+   phone — a band of dead space under the tab bar. Every suite now runs with
+   a real iPhone's insets unless it asks for none. */
+const INSETS = ':root{--sat:59px!important;--sab:34px!important}';
+
 async function open(opts) {
   const o = opts || {};
   const browser = await chromium.launch({ executablePath: CHROME, args: o.args || [] });
   const ctx = await browser.newContext({ viewport: o.viewport || { width: 390, height: 950 } });
+  if (o.insets !== false) await ctx.addInitScript((css) => {
+    const put = () => {
+      if (!document.head || document.getElementById('testInsets')) return;
+      const el = document.createElement('style');
+      el.id = 'testInsets'; el.textContent = css;
+      document.head.appendChild(el);
+    };
+    put();
+    document.addEventListener('readystatechange', put);
+    document.addEventListener('DOMContentLoaded', put);
+  }, INSETS);
   const errs = [];
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errs.push(e.message));
@@ -45,4 +62,4 @@ async function go(page, hash) {
   await page.waitForTimeout(550);
 }
 
-module.exports = { BASE, CHROME, suite, open, go };
+module.exports = { BASE, CHROME, INSETS, suite, open, go };
